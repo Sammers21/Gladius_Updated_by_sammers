@@ -1,0 +1,84 @@
+name: Release new version to CurseForge and Wago
+on:
+    push:
+        branches:
+            - master
+jobs:
+    release:
+        if: "contains(github.event.head_commit.message, 'release')"
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+            - name: Get next version
+              uses: reecetech/version-increment@2023.9.3
+              id: version
+              with:
+                  scheme: calver
+                  increment: patch
+            - name: "Update version in TOC file"
+              run: |
+                  sed -i 's/^## Version:.*/## Version: ${{ steps.version.outputs.version }}/' Gladius.toc
+            - name: "Create addon package"
+              env:
+                  ACTIONS_ALLOW_UNSECURE_COMMANDS: "true"
+              run: |
+                  mkdir Gladius_Updated_by_sammers 
+                  cp -R Libs Gladius_Updated_by_sammers/
+                  cp -R Modules Gladius_Updated_by_sammers/
+                  cp -R Images Gladius_Updated_by_sammers/
+                  cp Code.lua Gladius_Updated_by_sammers/
+                  cp Embeds.xml Gladius_Updated_by_sammers/
+                  cp Gladius.lua Gladius_Updated_by_sammers/
+                  cp Gladius.toc Gladius_Updated_by_sammers/
+                  cp Localizations.lua Gladius_Updated_by_sammers/
+                  cp Options.lua Gladius_Updated_by_sammers/
+                  cp "!Changelog.txt" Gladius_Updated_by_sammers/
+                  zip -vr Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip Gladius_Updated_by_sammers/
+            - name: "Create Github Release"
+              uses: actions/create-release@v1
+              id: create_release
+              with:
+                  draft: false
+                  prerelease: false
+                  release_name: "Release ${{ steps.version.outputs.version }}"
+                  tag_name: "${{ steps.version.outputs.version }}"
+                  body: "Releasing version ${{ steps.version.outputs.version }}"
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+            - name: "Upload artifact to release"
+              uses: actions/upload-release-asset@v1
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+              with:
+                  upload_url: ${{ steps.create_release.outputs.upload_url }}
+                  asset_path: ./Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip
+                  asset_name: Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip
+                  asset_content_type: application/zip
+            - name: "Upload to CurseForge"
+              uses: itsmeow/curseforge-upload@v3
+              with:
+                  file_path: "Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip"
+                  game_endpoint: "wow"
+                  changelog: "${{ github.event.head_commit.message }}"
+                  game_versions: "12.0.1"
+                  project_id: YOUR_CURSEFORGE_PROJECT_ID
+                  token: "${{ secrets.CF_API_TOKEN }}"
+            - name: "Upload to Wago.io"
+              env:
+                  WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+              run: |
+                  METADATA=$(cat <<EOF
+                  {
+                    "label": "${{ steps.version.outputs.version }}",
+                    "stability": "stable",
+                    "changelog": "${{ github.event.head_commit.message }}",
+                    "supported_retail_patch": "12.0.1"
+                  }
+                  EOF
+                  )
+                  curl -f -X POST \
+                    -F "metadata=$METADATA" \
+                    -F "file=@Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip" \
+                    -H "Authorization: Bearer $WAGO_API_TOKEN" \
+                    -H "Accept: application/json" \
+                    "https://addons.wago.io/api/projects/YOUR_WAGO_PROJECT_ID/version"
