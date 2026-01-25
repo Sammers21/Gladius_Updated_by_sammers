@@ -1,0 +1,34 @@
+﻿## Interface: 100000
+## Title: Gladius
+## Version: TWW
+## Notes: Arena enemy unit frames.
+## Author: Resike and Firebunny. Original author: Proditor
+## SavedVariables: Gladius2DB
+## OptionalDeps: Ace3, LibStub, LibSharedMedia-3.0
+
+#@no-lib-strip@
+Embeds.xml
+#@end-no-lib-strip@
+
+Gladius.lua
+Localizations.lua
+Options.lua
+Code.lua
+
+Modules\HealthBar.lua
+Modules\PowerBar.lua
+Modules\CastBar.lua
+Modules\Auras.lua
+Modules\ClassIcon.lua
+Modules\Trinket.lua
+Modules\Highlight.lua
+Modules\Clicks.lua
+Modules\TargetBar.lua
+Modules\Tags.lua
+Modules\Announcements.lua
+Modules\DRTracker.lua
+Modules\Timer.lua
+Modules\Layout.lua
+Modules\Dispel.lua
+Modules\Interrupt.lua
+Modules\Racial.lua
