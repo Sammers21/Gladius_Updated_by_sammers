@@ -175,11 +175,14 @@ if not IsAddOnLoadOnDemand then
     IsAddOnLoadOnDemand = C_AddOns.IsAddOnLoadOnDemand
 end
 
-hooksecurefunc('SetPortraitToTexture', function(texture)
-    if type(texture) == 'string' then
-        print(format('FIXME: SetPortraitToTexture Caller: %s, Debug Stack: %s', debugstack(2, 1, 0), debugstack(2)))
-    end
-end)
+-- SetPortraitToTexture was removed in 12.0
+if SetPortraitToTexture then
+    hooksecurefunc('SetPortraitToTexture', function(texture)
+        if type(texture) == 'string' then
+            print(format('FIXME: SetPortraitToTexture Caller: %s, Debug Stack: %s', debugstack(2, 1, 0), debugstack(2)))
+        end
+    end)
+end
 
 -- 10.2.5
 if not GetTimeToWellRested then
@@ -646,5 +649,27 @@ if not GetSpellCooldown then
         if spellCooldownInfo then
             return spellCooldownInfo.startTime, spellCooldownInfo.duration, spellCooldownInfo.isEnabled, spellCooldownInfo.modRate
         end
+    end
+end
+
+-- 12.0.0
+-- GetSpellName returns just the spell name string (C_Spell.GetSpellName is new in 12.0.0)
+if not GetSpellName then
+    GetSpellName = function(spellID)
+        if not spellID then
+            return nil
+        end
+        -- Try new API first (12.0.0+)
+        if C_Spell and C_Spell.GetSpellName then
+            return C_Spell.GetSpellName(spellID)
+        end
+        -- Fallback to GetSpellInfo
+        if C_Spell and C_Spell.GetSpellInfo then
+            local spellInfo = C_Spell.GetSpellInfo(spellID)
+            if spellInfo then
+                return spellInfo.name
+            end
+        end
+        return nil
     end
 end

@@ -1,19 +1,22 @@
-﻿## Interface: 100000
-## Title: Gladius
-## Version: TWW
+﻿## Interface: 120001, 120000, 110207
+## Title: Gladius Updated by sammers
 ## Notes: Arena enemy unit frames.
-## Author: Resike and Firebunny. Original author: Proditor
-## SavedVariables: Gladius2DB
+## Version: 2026.1.1
+## Author: Resike and Firebunny. Original author: Proditor. Updated by Sammers.
+## IconTexture: Interface\ICONS\Achievement_arena_2v2_7
 ## OptionalDeps: Ace3, LibStub, LibSharedMedia-3.0
+## X-Category: PvP/Arena
+## X-Credits: Resike, Firebunny, Proditor, Sammers
+## SavedVariables: Gladius2DB
 
 #@no-lib-strip@
 Embeds.xml
 #@end-no-lib-strip@
 
+Code.lua
 Gladius.lua
 Localizations.lua
 Options.lua
-Code.lua
 
 Modules\HealthBar.lua
 Modules\PowerBar.lua

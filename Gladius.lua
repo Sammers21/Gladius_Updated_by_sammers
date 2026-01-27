@@ -13,6 +13,7 @@ local type = type
 
 local CreateFrame = CreateFrame
 local GetArenaOpponentSpec = GetArenaOpponentSpec
+local GetBuildInfo = GetBuildInfo
 local GetNumArenaOpponentSpecs = GetNumArenaOpponentSpecs
 local GetNumGroupMembers = GetNumGroupMembers
 local GetSpecializationInfoByID = GetSpecializationInfoByID
@@ -30,15 +31,26 @@ local UIParent = UIParent
 Gladius = { }
 Gladius.eventHandler = CreateFrame("Frame")
 Gladius.eventHandler.events = { }
+Gladius.eventHandler.pendingEvents = { }
 
 Gladius.eventHandler:RegisterEvent("PLAYER_LOGIN")
 Gladius.eventHandler:RegisterEvent("ADDON_LOADED")
 Gladius.eventHandler:RegisterEvent("ARENA_PREP_OPPONENT_SPECIALIZATIONS")
+Gladius.eventHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 Gladius.eventHandler:SetScript("OnEvent", function(self, event, ...)
+	if event == "PLAYER_REGEN_ENABLED" and next(self.pendingEvents) then
+		for pendingEvent in pairs(self.pendingEvents) do
+			self.pendingEvents[pendingEvent] = nil
+			Gladius:RegisterEvent(pendingEvent)
+		end
+	end
 	if event == "PLAYER_LOGIN" then
 		Gladius:OnInitialize()
-		Gladius:OnEnable()
+		-- Defer OnEnable to avoid protected state issues in 12.0+
+		C_Timer.After(0, function()
+			Gladius:OnEnable()
+		end)
 		Gladius.eventHandler:UnregisterEvent("PLAYER_LOGIN")
 	else
 		local func = self.events[event]
@@ -52,6 +64,29 @@ Gladius.modules = { }
 Gladius.defaults = { }
 
 local L
+local interfaceVersion = select(4, GetBuildInfo()) or 0
+
+Gladius.isMidnightOrLater = interfaceVersion >= 120000
+Gladius.restrictedEvents = { }
+if Gladius.isMidnightOrLater then
+	-- Midnight (12.0+) blocks COMBAT_LOG_EVENT_UNFILTERED for addons.
+	Gladius.restrictedEvents["COMBAT_LOG_EVENT_UNFILTERED"] = true
+end
+
+function Gladius:IsEventRestricted(event)
+	return self.restrictedEvents[event] == true
+end
+
+function Gladius:SafeRegisterEvent(frame, event)
+	if self:IsEventRestricted(event) then
+		return false, "restricted"
+	end
+	if InCombatLockdown() or (frame.IsForbidden and frame:IsForbidden()) then
+		return false, "defer"
+	end
+	frame:RegisterEvent(event)
+	return true
+end
 
 function Gladius:Call(handler, func, ...)
 	-- module disabled, return
@@ -80,16 +115,19 @@ end
 
 function Gladius:RegisterEvent(event, func)
 	self.eventHandler.events[event] = func or event
-	self.eventHandler:RegisterEvent(event)
+	local ok, reason = self:SafeRegisterEvent(self.eventHandler, event)
+	if not ok and reason == "defer" then
+		self.eventHandler.pendingEvents[event] = true
+	end
 end
 
 function Gladius:UnregisterEvent(event)
 	self.eventHandler.events[event] = nil
-	self.eventHandler:UnregisterEvent(event)
+	pcall(self.eventHandler.UnregisterEvent, self.eventHandler, event)
 end
 
 function Gladius:UnregisterAllEvents()
-	self.eventHandler:UnregisterAllEvents()
+	pcall(self.eventHandler.UnregisterAllEvents, self.eventHandler)
 end
 
 function Gladius:NewModule(key, bar, attachTo, defaults, templates)
@@ -98,26 +136,45 @@ function Gladius:NewModule(key, bar, attachTo, defaults, templates)
 	-- event handling
 	module.eventHandler.events = { }
 	module.eventHandler.messages = { }
+	module.eventHandler.pendingEvents = { }
 	module.eventHandler:SetScript("OnEvent", function(self, event, ...)
+		-- Handle pending event registrations when leaving combat
+		if event == "PLAYER_REGEN_ENABLED" and next(self.pendingEvents) then
+			for pendingEvent in pairs(self.pendingEvents) do
+				self.pendingEvents[pendingEvent] = nil
+				module:RegisterEvent(pendingEvent)
+			end
+		end
 		local func = module.eventHandler.events[event]
 		if type(module[func]) == "function" then
 			module[func](module, event, ...)
 		end
 	end)
+	module.eventHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
 	module.RegisterEvent = function(self, event, func)
 		self.eventHandler.events[event] = func or event
-		self.eventHandler:RegisterEvent(event)
+		local ok, reason = Gladius:SafeRegisterEvent(self.eventHandler, event)
+		if not ok and reason == "defer" then
+			self.eventHandler.pendingEvents[event] = true
+		end
 	end
 	module.UnregisterEvent = function(self, event)
 		self.eventHandler.events[event] = nil
-		self.eventHandler:UnregisterEvent(event)
+		pcall(self.eventHandler.UnregisterEvent, self.eventHandler, event)
 	end
 	module.UnregisterAllEvents = function(self)
-		self.eventHandler:UnregisterAllEvents()
+		pcall(self.eventHandler.UnregisterAllEvents, self.eventHandler)
 	end
 	-- module status
 	module.Enable = function(self)
 		if not self.enabled then
+			-- Check for combat lockdown and defer if needed
+			if InCombatLockdown() then
+				C_Timer.After(1, function()
+					self:Enable()
+				end)
+				return
+			end
 			self.enabled = true
 			if type(self.OnEnable) == "function" then
 				self:OnEnable()
@@ -275,6 +332,14 @@ function Gladius:OnInitialize()
 end
 
 function Gladius:OnEnable()
+	-- Check for combat lockdown and defer if needed
+	if InCombatLockdown() then
+		C_Timer.After(1, function()
+			Gladius:OnEnable()
+		end)
+		return
+	end
+	
 	-- register the appropriate events that fires when you enter an arena
 	self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 	self:RegisterEvent("PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA")
@@ -289,15 +354,18 @@ function Gladius:OnEnable()
 	end
 	-- display help message
 	if not self.db.locked and not self.db.x["arena1"] and not self.db.y["arena1"] then
-		SlashCmdList["GLADIUS"]("test 5")
-		self:Print(L["Welcome to Gladius!"])
-		self:Print(L["First run has been detected, displaying test frame."])
-		self:Print(L["Valid slash commands are:"])
-		self:Print(L["/gladius ui"])
-		self:Print(L["/gladius test 2-5"])
-		self:Print(L["/gladius hide"])
-		self:Print(L["/gladius reset"])
-		self:Print(L["If this is not your first run please lock or move the frame to prevent this from happening."])
+		-- Defer test mode to next frame to avoid protected state
+		C_Timer.After(0.1, function()
+			SlashCmdList["GLADIUS"]("test 5")
+			self:Print(L["Welcome to Gladius!"])
+			self:Print(L["First run has been detected, displaying test frame."])
+			self:Print(L["Valid slash commands are:"])
+			self:Print(L["/gladius ui"])
+			self:Print(L["/gladius test 2-5"])
+			self:Print(L["/gladius hide"])
+			self:Print(L["/gladius reset"])
+			self:Print(L["If this is not your first run please lock or move the frame to prevent this from happening."])
+		end)
 	end
 	-- see if we are already in arena
 	if IsLoggedIn() then

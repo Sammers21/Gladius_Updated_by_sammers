@@ -96,6 +96,9 @@ function CastBar:IsDetached()
 end
 
 function CastBar:GetFrame(unit)
+	if not self.frame[unit] then
+		return nil
+	end
 	if Gladius.db.castIcon and Gladius.db.castIconPosition == "LEFT" then
 		return self.frame[unit].icon
 	else
