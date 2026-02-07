@@ -74,14 +74,10 @@ SlashCmdList["GLADIUS"] = function(msg)
 			local test
 			if msg == "test2" then
 				test = 2
-			elseif msg == "test3" then
-				test = 3
-			elseif msg == "test5" then
-				test = 5
 			else
 				test = tonumber(msg:match("^test (.+)"))
-				if not test or test > 5 or test < 2 or test == 4 then
-					test = 5
+				if not test or test > 3 or test < 2 then
+					test = 3
 				end
 			end
 			Gladius.testCount = test

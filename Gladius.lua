@@ -303,8 +303,6 @@ function Gladius:OnInitialize()
 		["arena1"] = {health = 400000, maxHealth = 400000, power = 300000, maxPower = 300000, powerType = 0, unitClass = "MAGE", unitRace = "Draenei", unitSpec = "Frost", unitSpecId = 64},
 		["arena2"] = {health = 380000, maxHealth = 400000, power = 100, maxPower = 120, powerType = 2, unitClass = "HUNTER", unitRace = "Night Elf", unitSpec = "Survival", unitSpecId = 255},
 		["arena3"] = {health = 240000, maxHealth = 400000, power = 90, maxPower = 130, powerType = 3, unitClass = "ROGUE", unitRace = "Human", unitSpec = "Combat", unitSpecId = 260},
-		["arena4"] = {health = 200000, maxHealth = 400000, power = 60, maxPower = 100, powerType = 6, unitClass = "DEATHKNIGHT", unitRace = "Dwarf", unitSpec = "Unholy", unitSpecId = 252},
-		["arena5"] = {health = 150000, maxHealth = 400000, power = 30, maxPower = 100, powerType = 1, unitClass = "WARRIOR", unitRace = "Gnome", unitSpec = "Arms", unitSpecId = 71},
 	},
 	{
 		__index = function(t, k)
@@ -340,12 +338,12 @@ function Gladius:OnEnable()
 	if not self.db.locked and not self.db.x["arena1"] and not self.db.y["arena1"] then
 		-- Defer test mode to next frame to avoid protected state
 		C_Timer.After(0.1, function()
-			SlashCmdList["GLADIUS"]("test 5")
+			SlashCmdList["GLADIUS"]("test 3")
 			self:Print(L["Welcome to Gladius!"])
 			self:Print(L["First run has been detected, displaying test frame."])
 			self:Print(L["Valid slash commands are:"])
 			self:Print(L["/gladius ui"])
-			self:Print(L["/gladius test 2-5"])
+			self:Print(L["/gladius test 2-3"])
 			self:Print(L["/gladius hide"])
 			self:Print(L["/gladius reset"])
 			self:Print(L["If this is not your first run please lock or move the frame to prevent this from happening."])
