@@ -216,13 +216,16 @@ function Tags:UpdateText(unit, text)
 					func, error = loadstring("local strformat = string.format return "..tag.func)
 					self.func[tagName] = func
 				end
-				-- escape return string
-				local funcText = func()
-				if funcText and unitParameter then
-					escapedText = strgsub(funcText(unitParameter) or "", "%%", "%%%%")
-				else
-					escapedText = ""
-				end
+				-- escape return string (pcall to handle 12.0 secret values)
+				local ok, result = pcall(function()
+					local funcText = func()
+					if funcText and unitParameter then
+						return strgsub(funcText(unitParameter) or "", "%%", "%%%%")
+					else
+						return ""
+					end
+				end)
+				escapedText = ok and result or ""
 			end
 			-- replace tag
 			tagText = strgsub(tagText, "%["..tagName.."%]", escapedText)
@@ -851,15 +854,15 @@ function Tags:GetTags()
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["health:short"] = {
-			func = "function(unit)\nlocal health = not Gladius.test and UnitHealth(unit) or Gladius.testing[unit].health\nif (health > 999) then\nreturn strformat(\"%.1fk\", (health / 1000))\nelse\nreturn health\nend\nend",
+			func = "function(unit)\nreturn not Gladius.test and UnitHealth(unit) or Gladius.testing[unit].health\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["maxhealth:short"] = {
-			func = "function(unit)\nlocal health = not Gladius.test and UnitHealthMax(unit) or Gladius.testing[unit].maxHealth\nif (health > 999) then\nreturn strformat(\"%.1fk\", (health / 1000))\nelse\nreturn health\nend\nend",
+			func = "function(unit)\nreturn not Gladius.test and UnitHealthMax(unit) or Gladius.testing[unit].maxHealth\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["health:percentage"] = {
-			func = "function(unit)\nlocal health = not Gladius.test and UnitHealth(unit) or Gladius.testing[unit].health\nlocal maxHealth = not Gladius.test and UnitHealthMax(unit) or Gladius.testing[unit].maxHealth\nreturn strformat(\"%.1f%%\", (health / maxHealth * 100))\nend",
+			func = "function(unit)\nif Gladius.test then\nlocal health = Gladius.testing[unit].health\nlocal maxHealth = Gladius.testing[unit].maxHealth\nreturn strformat(\"%.1f%%\", (health / maxHealth * 100))\nend\nreturn strformat(\"%.1f%%\", UnitHealthPercent(unit, nil, CurveConstants.ScaleTo100))\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["power"] = {
@@ -871,15 +874,15 @@ function Tags:GetTags()
 			events = "UNIT_MAXPOWER UNIT_DISPLAYPOWER UNIT_NAME_UPDATE"
 		},
 		["power:short"] = {
-			func = "function(unit)\nlocal power = not Gladius.test and UnitPower(unit) or Gladius.testing[unit].power\nif (power > 999) then\nreturn strformat(\"%.1fk\", (power / 1000))\nelse\nreturn power\nend\nend",
+			func = "function(unit)\nreturn not Gladius.test and UnitPower(unit) or Gladius.testing[unit].power\nend",
 			events = "UNIT_POWER_UPDATE UNIT_DISPLAYPOWER UNIT_NAME_UPDATE"
 		},
 		["maxpower:short"] = {
-			func = "function(unit)\nlocal power = not Gladius.test and UnitPowerMax(unit) or Gladius.testing[unit].maxPower\nif (power > 999) then\nreturn strformat(\"%.1fk\", (power / 1000))\nelse\nreturn power\nend\nend",
+			func = "function(unit)\nreturn not Gladius.test and UnitPowerMax(unit) or Gladius.testing[unit].maxPower\nend",
 			events = "UNIT_MAXPOWER UNIT_DISPLAYPOWER UNIT_NAME_UPDATE"
 		},
 		["power:percentage"] = {
-			func = "function(unit)\nlocal power = not Gladius.test and UnitPower(unit) or Gladius.testing[unit].power\nlocal maxPower = not Gladius.test and UnitPowerMax(unit) or Gladius.testing[unit].maxPower\nreturn strformat(\"%.1f%%\", (power / maxPower * 100))\nend",
+			func = "function(unit)\nif Gladius.test then\nlocal power = Gladius.testing[unit].power\nlocal maxPower = Gladius.testing[unit].maxPower\nreturn strformat(\"%.1f%%\", (power / maxPower * 100))\nend\nreturn strformat(\"%.1f%%\", UnitPowerPercent(unit, nil, CurveConstants.ScaleTo100))\nend",
 			events = "UNIT_POWER_UPDATE UNIT_MAXPOWER UNIT_DISPLAYPOWER UNIT_NAME_UPDATE"
 		},
 	}

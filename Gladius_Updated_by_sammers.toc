@@ -1,4 +1,4 @@
-﻿## Interface: 120001, 120000, 110207
+﻿## Interface: 120001, 120000
 ## Title: Gladius Updated by sammers
 ## Notes: Arena enemy unit frames.
 ## Version: 2026.1.1

@@ -62,7 +62,7 @@ local Auras = Gladius:NewModule("Auras", false, true, {
 })
 
 function Auras:OnEnable()
-	self:RegisterEvent("UNIT_AURA")
+	-- UNIT_AURA returns secret data for arena units in 12.0, aura display disabled
 	LSM = Gladius.LSM
 	self.buffFrame = self.buffFrame or { }
 	self.debuffFrame = self.debuffFrame or { }
@@ -255,9 +255,6 @@ function Auras:CreateFrame(unit)
 			Gladius:Call(Gladius.modules.Timer, "RegisterTimer", self.debuffFrame[unit][i], Gladius.db.aurasDebuffsTrackerCooldown, Gladius.db.aurasDebuffsHideTimer)
 		end
 	end
-	if not Gladius.test then
-		self:UNIT_AURA(nil, unit)
-	end
 end
 
 function Auras:Update(unit)
@@ -375,12 +372,7 @@ function Auras:Update(unit)
 		-- hide
 		self.debuffFrame[unit]:Hide()
 	end
-	-- event
-	if not Gladius.db.aurasDebuffs and not Gladius.db.aurasBuffs then
-		self:UnregisterAllEvents()
-	else
-		self:RegisterEvent("UNIT_AURA")
-	end
+	-- UNIT_AURA disabled - returns secret data for arena units in 12.0
 end
 
 function Auras:Show(unit)

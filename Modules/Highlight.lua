@@ -106,38 +106,18 @@ function Highlight:UNIT_TARGET(event, unit)
 	if (unit ~= "" and ((not IsInRaid()) or strfind(unit, "pet") or (not strfind(unit, "raid") and not strfind(unit, "party")))) then
 		return
 	end
-	local playerTargetGUID = UnitGUID("target")
-	local focusGUID = UnitGUID("focus")
-	local targetGUID = UnitGUID(unit.."target")
 	for arenaUnit, frame in pairs(self.frame) do
 		-- reset
 		self:Reset(arenaUnit)
-		--[[if targetGUID and UnitGUID(arenaUnit) == targetGUID and unit ~= "" then 
-			-- main assist
-			if Gladius.db.highlightAssist and GetPartyAssignment("MAINASSIST", unit) == 1 then
-				if frame.priority < Gladius.db.highlightTargetPriority then
-					frame.priority = Gladius.db.highlightTargetPriority
-					frame:SetBackdropBorderColor(Gladius.db.highlightAssistColor.r, Gladius.db.highlightAssistColor.g, Gladius.db.highlightAssistColor.b, Gladius.db.highlightAssistColor.a)
-				end
-			end
-			-- raid target icon
-			local icon = GetRaidTargetIndex(unit)
-			if icon and Gladius.db["highlightRaidIcon"..icon] then
-				if frame.priority < Gladius.db["highlightRaidIcon"..icon.."Priority"] then
-					frame.priority = Gladius.db["highlightRaidIcon"..icon.."Priority"]
-					frame:SetBackdropBorderColor(Gladius.db["highlightRaidIcon"..icon.."Color"].r, Gladius.db["highlightRaidIcon"..icon.."Color"].g, Gladius.db["highlightRaidIcon"..icon.."Color"].b, Gladius.db["highlightRaidIcon"..icon.."Color"].a)
-				end
-			end
-		end]]
-		-- player target
-		if playerTargetGUID and UnitGUID(arenaUnit) == playerTargetGUID then
+		-- player target (use UnitIsUnit to avoid comparing secret GUIDs in 12.0)
+		if UnitIsUnit(arenaUnit, "target") then
 			if frame.priority < Gladius.db.highlightTargetPriority then
 				frame.priority = Gladius.db.highlightTargetPriority
 				frame:SetBackdropBorderColor(Gladius.db.highlightTargetColor.r, Gladius.db.highlightTargetColor.g, Gladius.db.highlightTargetColor.b, Gladius.db.highlightTargetColor.a)
 			end
 		end
-		-- player focus
-		if focusGUID and UnitGUID(arenaUnit) == focusGUID then
+		-- player focus (use UnitIsUnit to avoid comparing secret GUIDs in 12.0)
+		if UnitIsUnit(arenaUnit, "focus") then
 			if frame.priority < Gladius.db.highlightFocusPriority then
 				frame.priority = Gladius.db.highlightFocusPriority
 				frame:SetBackdropBorderColor(Gladius.db.highlightFocusColor.r, Gladius.db.highlightFocusColor.g, Gladius.db.highlightFocusColor.b, Gladius.db.highlightFocusColor.a)

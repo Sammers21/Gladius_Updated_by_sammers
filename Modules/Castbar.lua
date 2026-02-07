@@ -117,29 +117,36 @@ function CastBar:UNIT_SPELLCAST_START(event, unit)
 	if self.frame[unit] == nil then
 		return
 	end
-	local spell, displayName, icon, startTime, endTime, isTradeSkill, castID, notInterruptible = UnitCastingInfo(unit)
-	if spell then
-		self.frame[unit].isCasting = true
-		if Gladius.db.castBarInverse then
-			self.frame[unit].value = (endTime - startTime) / 1000
-		else
-			self.frame[unit].value = (GetTime() - (startTime / 1000))
+	-- In 12.0, UnitCastingInfo returns secret values for arena units.
+	-- Arithmetic on secrets (startTime/endTime) will error, so pcall.
+	local ok = pcall(function()
+		local spell, displayName, icon, startTime, endTime, isTradeSkill, castID, notInterruptible = UnitCastingInfo(unit)
+		if spell then
+			self.frame[unit].isCasting = true
+			if Gladius.db.castBarInverse then
+				self.frame[unit].value = (endTime - startTime) / 1000
+			else
+				self.frame[unit].value = (GetTime() - (startTime / 1000))
+			end
+			self.frame[unit].maxValue = (endTime - startTime) / 1000
+			self.frame[unit]:SetMinMaxValues(0, self.frame[unit].maxValue)
+			self.frame[unit]:SetValue(self.frame[unit].value)
+			self.frame[unit].timeText:SetText(self.frame[unit].maxValue)
+			self.frame[unit].icon:SetTexture(icon)
+			if notInterruptible then
+				local color = Gladius.db.castBarColorUninterruptible
+				self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
+				self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
+			else
+				local color = Gladius.db.castBarColor
+				self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
+				self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
+			end
+			self.frame[unit].castText:SetText(spell)
 		end
-		self.frame[unit].maxValue = (endTime - startTime) / 1000
-		self.frame[unit]:SetMinMaxValues(0, self.frame[unit].maxValue)
-		self.frame[unit]:SetValue(self.frame[unit].value)
-		self.frame[unit].timeText:SetText(self.frame[unit].maxValue)
-		self.frame[unit].icon:SetTexture(icon)
-		if notInterruptible then
-			local color = Gladius.db.castBarColorUninterruptible
-			self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
-			self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
-		else
-			local color = Gladius.db.castBarColor
-			self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
-			self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
-		end
-		self.frame[unit].castText:SetText(spell)
+	end)
+	if not ok then
+		self:CastEnd(self.frame[unit])
 	end
 end
 
@@ -178,30 +185,35 @@ function CastBar:UNIT_SPELLCAST_CHANNEL_START(event, unit)
 	if self.frame[unit] == nil then
 		return
 	end
-	local spell, displayName, icon, startTime, endTime, isTradeSkill, notInterruptible = UnitChannelInfo(unit)
-	if spell then
-		self.frame[unit].isChanneling = true
-		--self.frame[unit].value = ((endTime / 1000) - GetTime())
-		if Gladius.db.castBarInverse then
-			self.frame[unit].value = (GetTime() - (startTime / 1000))
-		else
-			self.frame[unit].value = (endTime - startTime) / 1000
+	-- In 12.0, UnitChannelInfo returns secret values for arena units.
+	local ok = pcall(function()
+		local spell, displayName, icon, startTime, endTime, isTradeSkill, notInterruptible = UnitChannelInfo(unit)
+		if spell then
+			self.frame[unit].isChanneling = true
+			if Gladius.db.castBarInverse then
+				self.frame[unit].value = (GetTime() - (startTime / 1000))
+			else
+				self.frame[unit].value = (endTime - startTime) / 1000
+			end
+			self.frame[unit].maxValue = (endTime - startTime) / 1000
+			self.frame[unit]:SetMinMaxValues(0, self.frame[unit].maxValue)
+			self.frame[unit]:SetValue(self.frame[unit].value)
+			self.frame[unit].timeText:SetText(self.frame[unit].maxValue)
+			self.frame[unit].icon:SetTexture(icon)
+			if notInterruptible then
+				local color = Gladius.db.castBarColorUninterruptible
+				self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
+				self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
+			else
+				local color = Gladius.db.castBarColor
+				self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
+				self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
+			end
+			self.frame[unit].castText:SetText(spell)
 		end
-		self.frame[unit].maxValue = (endTime - startTime) / 1000
-		self.frame[unit]:SetMinMaxValues(0, self.frame[unit].maxValue)
-		self.frame[unit]:SetValue(self.frame[unit].value)
-		self.frame[unit].timeText:SetText(self.frame[unit].maxValue)
-		self.frame[unit].icon:SetTexture(icon)
-		if notInterruptible then
-			local color = Gladius.db.castBarColorUninterruptible
-			self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
-			self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
-		else
-			local color = Gladius.db.castBarColor
-			self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
-			self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
-		end
-		self.frame[unit].castText:SetText(spell)
+	end)
+	if not ok then
+		self:CastEnd(self.frame[unit])
 	end
 end
 
@@ -212,30 +224,35 @@ function CastBar:UNIT_SPELLCAST_EMPOWER_START(event, unit)
 	if self.frame[unit] == nil then
 		return
 	end
-	local spell, displayName, icon, startTime, endTime, isTradeSkill, notInterruptible = UnitChannelInfo(unit)
-	if spell then
-		self.frame[unit].isChanneling = true
-		--self.frame[unit].value = ((endTime / 1000) - GetTime())
-		if Gladius.db.castBarInverse then
-			self.frame[unit].value = (GetTime() - (startTime / 1000))
-		else
-			self.frame[unit].value = (endTime - startTime) / 1000
+	-- In 12.0, UnitChannelInfo returns secret values for arena units.
+	local ok = pcall(function()
+		local spell, displayName, icon, startTime, endTime, isTradeSkill, notInterruptible = UnitChannelInfo(unit)
+		if spell then
+			self.frame[unit].isChanneling = true
+			if Gladius.db.castBarInverse then
+				self.frame[unit].value = (GetTime() - (startTime / 1000))
+			else
+				self.frame[unit].value = (endTime - startTime) / 1000
+			end
+			self.frame[unit].maxValue = (endTime - startTime) / 1000
+			self.frame[unit]:SetMinMaxValues(0, self.frame[unit].maxValue)
+			self.frame[unit]:SetValue(self.frame[unit].value)
+			self.frame[unit].timeText:SetText(self.frame[unit].maxValue)
+			self.frame[unit].icon:SetTexture(icon)
+			if notInterruptible then
+				local color = Gladius.db.castBarColorUninterruptible
+				self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
+				self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
+			else
+				local color = Gladius.db.castBarColor
+				self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
+				self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
+			end
+			self.frame[unit].castText:SetText(spell)
 		end
-		self.frame[unit].maxValue = (endTime - startTime) / 1000
-		self.frame[unit]:SetMinMaxValues(0, self.frame[unit].maxValue)
-		self.frame[unit]:SetValue(self.frame[unit].value)
-		self.frame[unit].timeText:SetText(self.frame[unit].maxValue)
-		self.frame[unit].icon:SetTexture(icon)
-		if notInterruptible then
-			local color = Gladius.db.castBarColorUninterruptible
-			self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
-			self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
-		else
-			local color = Gladius.db.castBarColor
-			self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
-			self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
-		end
-		self.frame[unit].castText:SetText(spell)
+	end)
+	if not ok then
+		self:CastEnd(self.frame[unit])
 	end
 end
 
@@ -253,30 +270,33 @@ function CastBar:UNIT_SPELLCAST_DELAYED(event, unit)
 	if self.frame[unit] == nil then
 		return
 	end
-	local spell, displayName, icon, startTime, endTime, isTradeSkill, castID, notInterruptible
-	if event == "UNIT_SPELLCAST_DELAYED" then
-		spell, displayName, icon, startTime, endTime, isTradeSkill, castID, notInterruptible = UnitCastingInfo(unit)
-	else
-		spell, displayName, icon, startTime, endTime, isTradeSkill, notInterruptible = UnitChannelInfo(unit)
-	end
-	if startTime == nil then
-		return
-	end
-	if Gladius.db.castBarInverse then
-		if self.isCasting then
-			self.frame[unit].value = (endTime - startTime) / 1000
-		elseif self.isChanneling then
-			self.frame[unit].value = (GetTime() - (startTime / 1000))
+	-- In 12.0, cast info returns secret values for arena units.
+	local ok = pcall(function()
+		local spell, displayName, icon, startTime, endTime, isTradeSkill, castID, notInterruptible
+		if event == "UNIT_SPELLCAST_DELAYED" then
+			spell, displayName, icon, startTime, endTime, isTradeSkill, castID, notInterruptible = UnitCastingInfo(unit)
+		else
+			spell, displayName, icon, startTime, endTime, isTradeSkill, notInterruptible = UnitChannelInfo(unit)
 		end
-	else
-		if self.isCasting then
-			self.frame[unit].value = (GetTime() - (startTime / 1000))
-		elseif self.isChanneling then
-			self.frame[unit].value = (endTime - startTime) / 1000
+		if startTime == nil then
+			return
 		end
-	end
-	self.frame[unit].maxValue = (endTime - startTime) / 1000
-	self.frame[unit]:SetMinMaxValues(0, self.frame[unit].maxValue)
+		if Gladius.db.castBarInverse then
+			if self.isCasting then
+				self.frame[unit].value = (endTime - startTime) / 1000
+			elseif self.isChanneling then
+				self.frame[unit].value = (GetTime() - (startTime / 1000))
+			end
+		else
+			if self.isCasting then
+				self.frame[unit].value = (GetTime() - (startTime / 1000))
+			elseif self.isChanneling then
+				self.frame[unit].value = (endTime - startTime) / 1000
+			end
+		end
+		self.frame[unit].maxValue = (endTime - startTime) / 1000
+		self.frame[unit]:SetMinMaxValues(0, self.frame[unit].maxValue)
+	end)
 end
 
 function CastBar:CastEnd(bar)
@@ -309,6 +329,10 @@ local function CastUpdate(self, elapsed)
 	if Gladius.test then
 		return
 	end
+	-- nil guards: value/maxValue may be nil if cast setup failed due to secret values
+	if self.value == nil or self.maxValue == nil then
+		return
+	end
 	if (self.isCasting and not Gladius.db.castBarInverse) or (self.isChanneling and Gladius.db.castBarInverse) then
 		if self.value >= self.maxValue then
 			self:SetValue(self.maxValue)
@@ -332,17 +356,21 @@ end
 
 function CastBar:UpdateColors(unit)
 	if not Gladius.test then
-		local _, _, _, _, _, _, _, notInterruptible = UnitCastingInfo(unit)
-		local _, _, _, _, _, _, notInterruptibleChannel = UnitChannelInfo(unit)
-		if notInterruptible or notInterruptibleChannel then
-			local color = Gladius.db.castBarColorUninterruptible
-			self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
-			self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
-		else
-			local color = Gladius.db.castBarColor
-			self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
-			self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
-		end
+		-- In 12.0, notInterruptible is a secret value for arena units.
+		-- pcall to handle boolean test on secret.
+		local ok = pcall(function()
+			local _, _, _, _, _, _, _, notInterruptible = UnitCastingInfo(unit)
+			local _, _, _, _, _, _, notInterruptibleChannel = UnitChannelInfo(unit)
+			if notInterruptible or notInterruptibleChannel then
+				local color = Gladius.db.castBarColorUninterruptible
+				self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
+				self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
+			else
+				local color = Gladius.db.castBarColor
+				self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b, color.a)
+				self.frame[unit]:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
+			end
+		end)
 	else
 		if unit == "arena2" then
 			local color = Gladius.db.castBarColorUninterruptible
@@ -511,7 +539,7 @@ function CastBar:Test(unit)
 		else
 			self.frame[unit].timeText:SetText("")
 		end
-		local texture = select(3, GetSpellInfo(1))
+		local texture = GetSpellTexture(1)
 		self.frame[unit].icon:SetTexture(texture)
 		if Gladius.db.castText then
 			self.frame[unit].castText:SetText(L["Example Spell Name"])
@@ -532,7 +560,7 @@ function CastBar:Test(unit)
 		else
 			self.frame[unit].timeText:SetText("")
 		end
-		local texture = select(3, GetSpellInfo(1))
+		local texture = GetSpellTexture(1)
 		self.frame[unit].icon:SetTexture(texture)
 		if Gladius.db.castText then
 			self.frame[unit].castText:SetText(L["Uninterruptible Spell"])

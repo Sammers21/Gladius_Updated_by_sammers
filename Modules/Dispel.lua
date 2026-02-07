@@ -45,8 +45,8 @@ local Dispel = Gladius:NewModule("Dispel", false, true, {
 	"Grid style power bar",
 })
 
+
 function Dispel:OnEnable()
-	--self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 	self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 	LSM = Gladius.LSM
 	if not self.frame then

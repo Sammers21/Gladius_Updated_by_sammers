@@ -37,6 +37,14 @@ end
 local L = Gladius.L
 local LSM
 
+local GetSpellTexture = GetSpellTexture
+local GetNumArenaOpponents = GetNumArenaOpponents
+local UnitGUID = UnitGUID
+local UnitChannelInfo = UnitChannelInfo
+local IsInInstance = IsInInstance
+local GetTime = GetTime
+local select = select
+
 local Interrupt = Gladius:NewModule("Interrupts", false, false, {InterruptFrameLevel = 5},{})
 
 function Interrupt:OnEnable()
@@ -49,6 +57,7 @@ function Interrupt:OnDisable()
 		self.frame[unit]:SetAlpha(0)
 	end
 end
+
 function Interrupt:COMBAT_LOG_EVENT_UNFILTERED(event)
 		local _,subEvent,_,sourceGUID,sourceName,_,_,destGUID,destName,destFlags,destRaidFlags,spellID,spellName,_,auraType,extraSpellName,_,auraType2 = CombatLogGetCurrentEventInfo()
     local _, instanceType = IsInInstance()
@@ -63,12 +72,16 @@ function Interrupt:COMBAT_LOG_EVENT_UNFILTERED(event)
         end
         if goFar then
             for i=1,GetNumArenaOpponents() do
-                if destGUID == UnitGUID("arena"..i) and select(7,UnitChannelInfo("arena"..i))==false then
+                -- In 12.0, UnitGUID/UnitChannelInfo return secret values for arena units.
+                -- pcall to handle comparison/boolean test errors on secrets.
+                local ok, match = pcall(function()
+                    return destGUID == UnitGUID("arena"..i) and select(7,UnitChannelInfo("arena"..i))==false
+                end)
+                if ok and match then
                     unit="arena"..i
                     local d = iDurations[spellID]
                     self:UpdateInterrupt("arena"..i, spellID, d)
                 end
-
             end
         end
     end
@@ -86,12 +99,13 @@ function Interrupt:COMBAT_LOG_EVENT_UNFILTERED(event)
 
         if goFar then
             for i=1,GetNumArenaOpponents() do
-                if destGUID == UnitGUID("arena"..i) then
+                -- In 12.0, UnitGUID returns secret values for arena units.
+                local ok, match = pcall(function() return destGUID == UnitGUID("arena"..i) end)
+                if ok and match then
                     unit="arena"..i
                     local d = iDurations[spellID]
                     self:UpdateInterrupt("arena"..i, spellID, d)
                 end
-
             end
         end
     end
@@ -116,7 +130,13 @@ function()
 end)
 function Interrupt:UpdateInterrupt(unitt, sp, d)
     ClassIcon = Gladius.modules["ClassIcon"]
-    ClassIcon:ShowAura(unitt, {icon = select(3, GetSpellInfo(sp)), duration=d});
+    local icon
+    if sp then
+        icon = GetSpellTexture(sp)
+    else
+        icon = 135856
+    end
+    ClassIcon:ShowAura(unitt, {icon = icon, duration=d});
     table.insert(canOverWrite, {unit=unitt, time=GetTime()+d});
 end
 

@@ -117,12 +117,9 @@ function PowerBar:UpdatePower(unit, power, maxPower, powerType)
 	end
 	-- update min max values
 	self.frame[unit]:SetMinMaxValues(0, maxPower)
-	-- inverse bar
-	if Gladius.db.powerBarInverse then
-		self.frame[unit]:SetValue(maxPower - power)
-	else
-		self.frame[unit]:SetValue(power)
-	end
+	-- In 12.0, power values are secret for arena units; SetValue accepts secrets
+	-- Inverse bar not supported (arithmetic on secrets crashes)
+	self.frame[unit]:SetValue(power)
 	-- update bar color
 	if not Gladius.db.powerBarDefaultColor then
 		local color = Gladius.db.powerBarColor

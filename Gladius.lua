@@ -35,7 +35,6 @@ Gladius.eventHandler.pendingEvents = { }
 
 Gladius.eventHandler:RegisterEvent("PLAYER_LOGIN")
 Gladius.eventHandler:RegisterEvent("ADDON_LOADED")
-Gladius.eventHandler:RegisterEvent("ARENA_PREP_OPPONENT_SPECIALIZATIONS")
 Gladius.eventHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 Gladius.eventHandler:SetScript("OnEvent", function(self, event, ...)
@@ -64,23 +63,9 @@ Gladius.modules = { }
 Gladius.defaults = { }
 
 local L
-local interfaceVersion = select(4, GetBuildInfo()) or 0
-
-Gladius.isMidnightOrLater = interfaceVersion >= 120000
-Gladius.restrictedEvents = { }
-if Gladius.isMidnightOrLater then
-	-- Midnight (12.0+) blocks COMBAT_LOG_EVENT_UNFILTERED for addons.
-	Gladius.restrictedEvents["COMBAT_LOG_EVENT_UNFILTERED"] = true
-end
-
-function Gladius:IsEventRestricted(event)
-	return self.restrictedEvents[event] == true
-end
+-- interfaceVersion no longer needed; always assume WoW 12.0 Midnight
 
 function Gladius:SafeRegisterEvent(frame, event)
-	if self:IsEventRestricted(event) then
-		return false, "restricted"
-	end
 	if InCombatLockdown() or (frame.IsForbidden and frame:IsForbidden()) then
 		return false, "defer"
 	end
@@ -343,7 +328,6 @@ function Gladius:OnEnable()
 	-- register the appropriate events that fires when you enter an arena
 	self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 	self:RegisterEvent("PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA")
-	self:RegisterEvent("ARENA_PREP_OPPONENT_SPECIALIZATIONS")
 	-- enable modules
 	for moduleName, module in pairs(self.modules) do
 		if self.db.modules[moduleName] then
@@ -406,7 +390,6 @@ function Gladius:JoinedArena()
 	-- special arena event
 	self:RegisterEvent("UNIT_NAME_UPDATE")
 	self:RegisterEvent("ARENA_OPPONENT_UPDATE")
-	self:RegisterEvent("ARENA_PREP_OPPONENT_SPECIALIZATIONS")
 	--self:RegisterEvent("UNIT_HEALTH")
 	--self:RegisterEvent("UNIT_MAXHEALTH", "UNIT_HEALTH")
 	--self:RegisterEvent("UNIT_AURA")

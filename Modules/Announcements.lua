@@ -21,8 +21,6 @@ local IsArenaSkirmish = IsArenaSkirmish
 local IsInInstance = IsInInstance
 local SendChatMessage = SendChatMessage
 local UnitClass = UnitClass
-local UnitHealth = UnitHealth
-local UnitHealthMax = UnitHealthMax
 local UnitIsGroupAssistant = UnitIsGroupAssistant
 local UnitIsGroupLeader = UnitIsGroupLeader
 local UnitName = UnitName
@@ -45,12 +43,8 @@ local Announcements = Gladius:NewModule("Announcements", false, false, {
 function Announcements:OnEnable()
 	-- Register events
 	self:RegisterEvent("UNIT_HEALTH")
-	self:RegisterEvent("UNIT_AURA")
 	self:RegisterEvent("UNIT_SPELLCAST_START")
 	self:RegisterEvent("UNIT_NAME_UPDATE")
-	self:RegisterEvent("ARENA_PREP_OPPONENT_SPECIALIZATIONS")
-	-- register custom events
-	--self:RegisterMessage("GLADIUS_SPEC_UPDATE")
 	-- Table holding messages to throttle
 	self.throttled = { }
 	-- enemy detected
@@ -111,27 +105,14 @@ function Announcements:UNIT_HEALTH(event, unit)
 	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") or not Gladius.db.announcements.health then
 		return
 	end
-	local healthPercent = mathfloor((UnitHealth(unit) / UnitHealthMax(unit)) * 100)
+	-- In 12.0, UnitHealthPercent returns a secret value for arena units.
+	-- mathfloor on a secret errors, so we pcall and silently skip.
+	local ok, healthPercent = pcall(function()
+		return mathfloor(UnitHealthPercent(unit, nil, CurveConstants.ScaleTo100))
+	end)
+	if not ok then return end
 	if healthPercent < Gladius.db.announcements.healthThreshold then
 		self:Send(string.format(L["LOW HEALTH: %s (%s)"], UnitName(unit), UnitClass(unit)), 10, unit)
-	end
-end
-
-function Announcements:UNIT_AURA(event, unit)
-	local _, instanceType = IsInInstance()
-	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") or not Gladius.db.announcements.drinks then
-		return
-	end
-	local index
-	for i = 1, 40 do
-		local _, _, _, _, _, _, _, _, _, spellID = UnitBuff(unit, i, "HELPFUL")
-		if spellID == 57073 then
-			index = i
-			break
-		end
-	end
-	if index then
-		self:Send(string.format(L["DRINKING: %s (%s)"], UnitName(unit), UnitClass(unit)), 2, unit)
 	end
 end
 
@@ -174,7 +155,10 @@ function Announcements:UNIT_SPELLCAST_START(event, unit, lineGUID, spellID)
 	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") or not Gladius.db.announcements.resurrect then
 		return
 	end
-	if RES_SPELLS[spellID] then
+	-- In 12.0, spellID is a secret value for arena units and can't be used as table key.
+	-- pcall to handle the error gracefully.
+	local ok, isRes = pcall(function() return RES_SPELLS[spellID] end)
+	if ok and isRes then
 		self:Send(string.format(L["RESURRECTING: %s (%s)"], UnitName(unit), UnitClass(unit)), 2, unit)
 	end
 end

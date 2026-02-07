@@ -19,17 +19,6 @@ local UnitFactionGroup = UnitFactionGroup
 local UnitLevel = UnitLevel
 local UnitName = UnitName
 
-local udb = UnitDebuff
-local UnitDebuff = function(uId, spellName)
-	for i = 1, 40 do
-		local bfaspellName = udb(uId, i)
-		if not bfaspellName then return end
-		if spellName == bfaspellName then
-			return udb(uId, i)
-		end
-	end
-end
-
 local Trinket = Gladius:NewModule("Trinket", false, true, {
 	trinketAttachTo = "Frame",
 	trinketAnchor = "TOPLEFT",
@@ -55,8 +44,7 @@ local Trinket = Gladius:NewModule("Trinket", false, true, {
 })
 
 function Trinket:OnEnable()
-	self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-	self:RegisterEvent("UNIT_AURA")
+	self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 	self:RegisterEvent("ARENA_CROWD_CONTROL_SPELL_UPDATE");
 	LSM = Gladius.LSM
 	if not self.frame then
@@ -137,70 +125,62 @@ function Trinket:ARENA_CROWD_CONTROL_SPELL_UPDATE(event, unit, spellID)
 		return
 	end
 	if (spellID ~= self.frame[unit].spellID) then
-		local _, _, spellTexture = GetSpellInfo(spellID);
+		local spellTexture = GetSpellTexture(spellID);
 		self.frame[unit].spellID = spellID;
 		self.frame[unit].texture:SetTexture(spellTexture);
 	end
 end
-function Trinket:UNIT_AURA(event, unit)
+function Trinket:COMBAT_LOG_EVENT_UNFILTERED(event)
+	local _, subEvent, _, sourceGUID, _, _, _, _, _, _, _, spellID = CombatLogGetCurrentEventInfo()
+	if subEvent ~= "SPELL_CAST_SUCCESS" then return end
 	local _, instanceType = IsInInstance()
-	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") then
-		return
-	end
-	-- Set Trinket CD on Adaptation
-	if UnitDebuff(unit, "Adapted") then
-		local _,_,_,_,_,t = UnitDebuff(unit, "Adapted")
-		local g = t-GetTime()
-		if g > 59 then
-			self:UpdateTrinket(unit, 60)
+	if instanceType ~= "arena" then return end
+
+	local unit
+	for i = 1, 5 do
+		-- In 12.0, UnitGUID returns secret values for arena units.
+		local ok, match = pcall(function() return UnitGUID("arena"..i) == sourceGUID end)
+		if ok and match then
+			unit = "arena"..i
+			break
 		end
 	end
-end
+	if not unit or not self.frame[unit] then return end
 
-function Trinket:UNIT_SPELLCAST_SUCCEEDED(event, unit, spellLineID, spell)
-	local _, instanceType = IsInInstance()
-	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") then
-		return
-	end
 	-- PVP trinkets
-	if spell == 42292 then
+	if spellID == 42292 then
 		self:UpdateTrinket(unit, 120)
-	end
 	-- Honorable Medallion
-	if spell == 195710 then
+	elseif spellID == 195710 then
 		self:UpdateTrinket(unit, 180)
-	end
 	-- Gladiator's Medallion
-	if spell == 208683 then
+	elseif spellID == 208683 then
 		self:UpdateTrinket(unit, 120)
-	end
-
 	-- Gladiator's Medallion 9.0.1
-	if spell == 336126 then
+	elseif spellID == 336126 then
 		self:UpdateTrinket(unit, 120)
-	end
-
-	local cd = self:GetTrinketCD(unit)
-	if cd < 90 then
-		-- Every Man For Himself
-		if spell == 59752 then
-			if self:IsHealer(unit) then
-				self:UpdateTrinket(unit, 60)
-			else
-				self:UpdateTrinket(unit, 90)
+	else
+		local cd = self:GetTrinketCD(unit)
+		if cd < 90 then
+			-- Every Man For Himself
+			if spellID == 59752 then
+				if self:IsHealer(unit) then
+					self:UpdateTrinket(unit, 60)
+				else
+					self:UpdateTrinket(unit, 90)
+				end
 			end
 		end
-	end
 
-	local sharedCD = 30
-	if cd < sharedCD then
-		-- Stoneform
-		if spell == 20594 or spell == 265221 then
-			self:UpdateTrinket(unit, sharedCD)
-		end
-		-- Will of the Forsaken
-		if spell == 7744 then
-			self:UpdateTrinket(unit, sharedCD)
+		local sharedCD = 30
+		if cd < sharedCD then
+			-- Stoneform
+			if spellID == 20594 or spellID == 265221 then
+				self:UpdateTrinket(unit, sharedCD)
+			-- Will of the Forsaken
+			elseif spellID == 7744 then
+				self:UpdateTrinket(unit, sharedCD)
+			end
 		end
 	end
 end
@@ -828,8 +808,7 @@ function Trinket:GetOptions()
 end
 -- Trinket stuff
 function Trinket:OnEnable()
-    self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-    self:RegisterEvent("UNIT_AURA")
+    self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     self:RegisterEvent("ARENA_CROWD_CONTROL_SPELL_UPDATE");
     self:RegisterEvent("GROUP_ROSTER_UPDATE");
     LSM = Gladius.LSM

@@ -18,16 +18,6 @@ local UnitClass = UnitClass
 local UnitLevel = UnitLevel
 local UnitName = UnitName
 
-local udb = UnitDebuff
-local UnitDebuff = function(uId, spellName)
-	for i = 1, 40 do
-		local bfaspellName = udb(uId, i)
-		if not bfaspellName then return end
-		if spellName == bfaspellName then
-			return udb(uId, i)
-		end
-	end
-end
 local unitRaceCDs = {
 	["HUMAN"] = { cooldown = 180, spellID = 59752, sharesCD = true },
 	["DWARF"] = { cooldown = 120, spellID = 20594, sharesCD = true },
@@ -78,8 +68,7 @@ local Racial = Gladius:NewModule("Racial", false, true, {
 })
 
 function Racial:OnEnable()
-	self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-	self:RegisterEvent("UNIT_AURA")
+	self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 	self:RegisterEvent("UNIT_NAME_UPDATE");
 	LSM = Gladius.LSM
 	if not self.frame then
@@ -135,23 +124,6 @@ function Racial:autoFixAll()
 end
 
 
-function Racial:UNIT_AURA(event, unit)
-	local _, instanceType = IsInInstance()
-	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") then
-		return
-	end
-	local race = (self.frame[unit].race or string.upper(select(2, UnitRace(unit))))
-	-- Set Racial CD on Adaptation
-	if UnitDebuff(unit, "Adapted") then
-		local _,_,_,_,_,t = UnitDebuff(unit, "Adapted")
-		local g = t-GetTime()
-		if g > 59 and unitRaceCDs[race].sharesCD then
-			local sharedCD = (race == 'HUMAN' and 90) or 30
-			self:UpdateRacial(unit, sharedCD)
-		end
-	end
-end
-
 function Racial:IsHealer(unit)
 	local id = string.match(unit, "arena(%d)")
 	local specID = GetArenaOpponentSpec and GetArenaOpponentSpec(id)
@@ -172,13 +144,25 @@ function Racial:IsHealer(unit)
 	return false
 end
 
-function Racial:UNIT_SPELLCAST_SUCCEEDED(event, unit, spellLineID, spell)
-	self:autoFixAll() --hacky way of fixing racial errors
+function Racial:COMBAT_LOG_EVENT_UNFILTERED(event)
+	local _, subEvent, _, sourceGUID, _, _, _, _, _, _, _, spellID = CombatLogGetCurrentEventInfo()
+	if subEvent ~= "SPELL_CAST_SUCCESS" then return end
 	local _, instanceType = IsInInstance()
-	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") then
-		return
+	if instanceType ~= "arena" then return end
+
+	local unit
+	for i = 1, 5 do
+		if UnitGUID("arena"..i) == sourceGUID then
+			unit = "arena"..i
+			break
+		end
 	end
-	local race = (self.frame[unit].race or string.upper(select(2, UnitRace(unit))))
+	if not unit or not self.frame[unit] then return end
+
+	self:autoFixAll()
+	local race = (self.frame[unit].race or string.upper(select(2, UnitRace(unit)) or "HUMAN"))
+	if not unitRaceCDs[race] then return end
+
 	if unitRaceCDs[race].sharesCD then
 		local cd = self:GetRacialCD(unit)
 
@@ -189,30 +173,16 @@ function Racial:UNIT_SPELLCAST_SUCCEEDED(event, unit, spellLineID, spell)
 			sharedCD = 30
 		end
 
-		if (cd < sharedCD) then
-			-- PVP Trinkets
-			if spell == 42292 then
+		if cd < sharedCD then
+			-- PVP Trinkets / Medallions
+			if spellID == 42292 or spellID == 195710 or spellID == 208683 or spellID == 336126 then
 				self:UpdateRacial(unit, sharedCD)
 			end
-			-- Honorable Medallion
-			if spell == 195710 then
-				self:UpdateRacial(unit, sharedCD)
-			end
-			-- Gladiator's Medallion
-			if spell == 208683 then
-				self:UpdateRacial(unit, sharedCD)
-			end
-
-			-- Gladiator's Medallion 9.0.1
-			if spell == 336126 then
-				self:UpdateRacial(unit, sharedCD)
-			end
-
 		end
 	end
 
 	-- all racials
-	if spell == unitRaceCDs[race].spellID then
+	if spellID == unitRaceCDs[race].spellID then
 		self:UpdateRacial(unit, unitRaceCDs[race].cooldown)
 	end
 end
@@ -710,8 +680,7 @@ function Racial:GetOptions()
 end
 -- Racial stuff
 function Racial:OnEnable()
-    self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-    self:RegisterEvent("UNIT_AURA")
+    self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     self:RegisterEvent("UNIT_NAME_UPDATE");
     self:RegisterEvent("GROUP_ROSTER_UPDATE");
     LSM = Gladius.LSM

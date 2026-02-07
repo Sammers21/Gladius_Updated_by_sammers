@@ -113,12 +113,9 @@ function HealthBar:UpdateHealth(unit, health, maxHealth)
 		return
 	end
 	self.frame[unit]:SetMinMaxValues(0, maxHealth)
-	-- inverse bar
-	if Gladius.db.healthBarInverse then
-		self.frame[unit]:SetValue(maxHealth - health)
-	else
-		self.frame[unit]:SetValue(health)
-	end
+	-- In 12.0, health values are secret for arena units; SetValue accepts secrets
+	-- Inverse bar not supported (arithmetic on secrets crashes)
+	self.frame[unit]:SetValue(health)
 end
 
 function HealthBar:UpdateColors(unit)

@@ -357,7 +357,7 @@ local ClassIcon = Gladius:NewModule("ClassIcon", false, true, {
 })
 
 function ClassIcon:OnEnable()
-	self:RegisterEvent("UNIT_AURA")
+	-- UNIT_AURA returns secret data for arena units in 12.0, aura overlay disabled
 	self.version = 1
 	LSM = Gladius.LSM
 	if not self.frame then
@@ -645,11 +645,10 @@ function ClassIcon:Update(unit)
 end
 
 function ClassIcon:Show(unit)
-	local testing = Gladius.test
 	-- show frame
 	self.frame[unit]:SetAlpha(1)
-	-- set class icon
-	self:UpdateAura(unit)
+	-- set class icon (UpdateAura disabled - UnitAura returns secret data for arena units in 12.0)
+	self:SetClassIcon(unit)
 end
 
 function ClassIcon:Reset(unit)
