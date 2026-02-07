@@ -358,10 +358,14 @@ local ClassIcon = Gladius:NewModule("ClassIcon", false, true, {
 
 function ClassIcon:OnEnable()
 	-- UNIT_AURA returns secret data for arena units in 12.0, aura overlay disabled
+	-- Instead we hook Blizzard's CompactArenaFrameMember DebuffFrame for CC display
 	self.version = 1
 	LSM = Gladius.LSM
 	if not self.frame then
 		self.frame = { }
+	end
+	if not self.hookedBlizzDebuffs then
+		self.hookedBlizzDebuffs = {}
 	end
 	Gladius.db.auraVersion = self.version
 end
@@ -649,6 +653,38 @@ function ClassIcon:Show(unit)
 	self.frame[unit]:SetAlpha(1)
 	-- set class icon (UpdateAura disabled - UnitAura returns secret data for arena units in 12.0)
 	self:SetClassIcon(unit)
+	-- Hook Blizzard's DebuffFrame for CC display on class icon
+	self:HookBlizzDebuffs(unit)
+end
+
+function ClassIcon:HookBlizzDebuffs(unit)
+	local id = tonumber(unit:match("arena(%d)"))
+	if not id or self.hookedBlizzDebuffs[id] then return end
+
+	local blizzFrame = _G["CompactArenaFrameMember" .. id]
+	if not blizzFrame then return end
+
+	local debuffFrame = blizzFrame.DebuffFrame
+	if not debuffFrame then return end
+
+	self.hookedBlizzDebuffs[id] = true
+	local unitFrame = self.frame[unit]
+	local classIcon = self
+
+	hooksecurefunc(debuffFrame.Icon, "SetTexture", function(_, tex)
+		if not unitFrame then return end
+		if tex and tex ~= "INTERFACE\\ICONS\\INV_MISC_QUESTIONMARK.BLP" then
+			unitFrame.texture:SetTexture(tex)
+			unitFrame.texture:SetTexCoord(0, 1, 0, 1)
+		else
+			classIcon:SetClassIcon(unit)
+		end
+	end)
+
+	hooksecurefunc(debuffFrame.Cooldown, "SetCooldown", function(_, start, duration)
+		if not unitFrame or not unitFrame.cooldown then return end
+		unitFrame.cooldown:SetCooldown(start, duration)
+	end)
 end
 
 function ClassIcon:Reset(unit)

@@ -151,7 +151,7 @@ end
 
 function HealthBar:Update(unit)
 	-- check parent module
-	if not Gladius:GetModule(Gladius.db.castBarAttachTo) then
+	if Gladius.db.healthBarAttachTo ~= "Frame" and not Gladius:GetModule(Gladius.db.healthBarAttachTo) then
 		if self.frame[unit] then
 			self.frame[unit]:Hide()
 		end

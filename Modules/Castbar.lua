@@ -52,31 +52,16 @@ local CastBar = Gladius:NewModule("CastBar", true, true, {
 })
 
 function CastBar:OnEnable()
-	self:RegisterEvent("UNIT_SPELLCAST_START")
-	self:RegisterEvent("UNIT_SPELLCAST_STOP")
-	self:RegisterEvent("UNIT_SPELLCAST_DELAYED")
-	self:RegisterEvent("UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_STOP")
-	self:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_STOP")
-	self:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
-	self:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "UNIT_SPELLCAST_DELAYED")
-	self:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_STOP")
-	self:RegisterEvent("UNIT_SPELLCAST_EMPOWER_START")
-    self:RegisterEvent("UNIT_SPELLCAST_EMPOWER_UPDATE", "UNIT_SPELLCAST_DELAYED")
-	self:RegisterEvent("UNIT_SPELLCAST_EMPOWER_STOP", "UNIT_SPELLCAST_STOP")
-	if not IsWrathClassic then
-		self:RegisterEvent("UNIT_SPELLCAST_INTERRUPTIBLE")
-		self:RegisterEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE")
-	end
+	-- In 12.0 Midnight, UnitCastingInfo/UnitChannelInfo return secret values for arena units.
+	-- Custom cast bar logic fails on secrets, so we steal Blizzard's CastingBarFrame instead.
+	-- No spellcast events needed - Blizzard's bar handles everything internally.
 	LSM = Gladius.LSM
-	-- set frame type
-	--[[if (Gladius.db.castBarAttachTo == "Frame" or Gladius:GetModule(Gladius.db.castBarAttachTo).isBar) then
-		self.isBar = true
-	else
-		self.isBar = false
-	end]]
 	self.isBar = true
 	if not self.frame then
 		self.frame = { }
+	end
+	if not self.blizzCastBars then
+		self.blizzCastBars = {}
 	end
 end
 
@@ -508,22 +493,37 @@ function CastBar:Update(unit)
 end
 
 function CastBar:Show(unit)
-	-- show frame
-	self.frame[unit]:SetAlpha(1)
+	-- Keep custom bar hidden - it's only used for module frame tracking/positioning
+	self.frame[unit]:SetAlpha(0)
+	-- Steal Blizzard's CastingBarFrame for this arena unit
+	local id = tonumber(unit:match("arena(%d)"))
+	if id and not self.blizzCastBars[id] then
+		local blizzFrame = _G["CompactArenaFrameMember" .. id]
+		if blizzFrame and blizzFrame.CastingBarFrame then
+			local castBar = blizzFrame.CastingBarFrame
+			castBar:SetParent(Gladius.buttons[unit])
+			castBar:ClearAllPoints()
+			local parent = Gladius:GetParent(unit, Gladius.db.castBarAttachTo)
+			castBar:SetPoint(Gladius.db.castBarAnchor, parent, Gladius.db.castBarRelativePoint, Gladius.db.castBarOffsetX, Gladius.db.castBarOffsetY)
+			castBar:SetFrameStrata("HIGH")
+			local width = Gladius.db.castBarAdjustWidth and Gladius.db.barWidth or Gladius.db.castBarWidth
+			castBar:SetWidth(width)
+			castBar:SetHeight(Gladius.db.castBarHeight)
+			self.blizzCastBars[id] = castBar
+		end
+	end
 end
 
 function CastBar:Reset(unit)
-	-- reset bar
+	-- reset custom bar
 	self.frame[unit]:SetMinMaxValues(0, 1)
 	self.frame[unit]:SetValue(0)
-	-- reset text
 	if self.frame[unit].castText:GetFont() then
 		self.frame[unit].castText:SetText("")
 	end
 	if self.frame[unit].timeText:GetFont() then
 		self.frame[unit].timeText:SetText("")
 	end
-	-- hide
 	self.frame[unit]:SetAlpha(0)
 end
 

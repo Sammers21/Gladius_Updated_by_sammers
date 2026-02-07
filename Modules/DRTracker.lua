@@ -46,11 +46,17 @@ end
 
 
 function DRTracker:OnEnable()
-	-- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration
+	-- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration.
+	-- Use Blizzard's SpellDiminishStatusTray instead of custom DR tracking.
 	LSM = Gladius.LSM
 	if not self.frame then
 		self.frame = { }
 	end
+	if not self.blizzDRTrays then
+		self.blizzDRTrays = {}
+	end
+	-- Enable Blizzard's built-in DR display
+	C_CVar.SetCVar("spellDiminishPVPEnemiesEnabled", "1")
 end
 
 function DRTracker:OnDisable()
@@ -280,8 +286,23 @@ function DRTracker:Update(unit)
 end
 
 function DRTracker:Show(unit)
-	-- show frame
-	self.frame[unit]:SetAlpha(1)
+	-- Keep custom DR frame hidden (CLEU is protected on Midnight)
+	self.frame[unit]:SetAlpha(0)
+	-- Steal Blizzard's SpellDiminishStatusTray for this arena unit
+	local id = tonumber(unit:match("arena(%d)"))
+	if id and not self.blizzDRTrays[id] then
+		local blizzFrame = _G["CompactArenaFrameMember" .. id]
+		if blizzFrame and blizzFrame.SpellDiminishStatusTray then
+			local drTray = blizzFrame.SpellDiminishStatusTray
+			drTray:SetParent(Gladius.buttons[unit])
+			drTray:ClearAllPoints()
+			local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
+			drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX, Gladius.db.drTrackerOffsetY)
+			drTray:EnableMouse(false)
+			drTray:SetMouseClickEnabled(false)
+			self.blizzDRTrays[id] = drTray
+		end
+	end
 end
 
 function DRTracker:Reset(unit)

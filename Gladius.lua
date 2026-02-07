@@ -388,10 +388,9 @@ function Gladius:JoinedArena()
 	-- special arena event
 	self:RegisterEvent("UNIT_NAME_UPDATE")
 	self:RegisterEvent("ARENA_OPPONENT_UPDATE")
-	--self:RegisterEvent("UNIT_HEALTH")
-	--self:RegisterEvent("UNIT_MAXHEALTH", "UNIT_HEALTH")
-	--self:RegisterEvent("UNIT_AURA")
-	--self:RegisterEvent("UNIT_SPELLCAST_START")
+	self:RegisterEvent("ARENA_PREP_OPPONENT_SPECIALIZATIONS")
+	self:RegisterEvent("UNIT_HEALTH")
+	self:RegisterEvent("UNIT_MAXHEALTH", "UNIT_HEALTH")
 
 	-- reset test
 	self.test = false
@@ -399,6 +398,20 @@ function Gladius:JoinedArena()
 
 	-- hide buttons
 	self:HideFrame()
+
+	-- Hide Blizzard's CompactArenaFrame (Midnight 12.x)
+	if not self.blizzHider then
+		self.blizzHider = CreateFrame("Frame")
+		self.blizzHider:Hide()
+	end
+	if not InCombatLockdown() then
+		if CompactArenaFrame then
+			CompactArenaFrame:SetParent(self.blizzHider)
+		end
+		if CompactArenaFrameTitle then
+			CompactArenaFrameTitle:SetParent(self.blizzHider)
+		end
+	end
 
 	-- background
 	if self.db.groupButtons then

@@ -272,6 +272,12 @@ function Tags:Show(unit)
 	if not self.frame[unit] then
 		self.frame[unit] = { }
 	end
+	-- Ensure font strings exist (call Update if they don't)
+	local hasFrames = false
+	for _ in pairs(self.frame[unit]) do hasFrames = true; break end
+	if not hasFrames then
+		self:Update(unit)
+	end
 	-- update text
 	for text, _ in pairs(Gladius.db.tagsTexts) do
 		self:UpdateText(unit, text)
