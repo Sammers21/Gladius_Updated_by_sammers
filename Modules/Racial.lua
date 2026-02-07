@@ -68,7 +68,7 @@ local Racial = Gladius:NewModule("Racial", false, true, {
 })
 
 function Racial:OnEnable()
-	self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	-- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration
 	self:RegisterEvent("UNIT_NAME_UPDATE");
 	LSM = Gladius.LSM
 	if not self.frame then
@@ -680,7 +680,7 @@ function Racial:GetOptions()
 end
 -- Racial stuff
 function Racial:OnEnable()
-    self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    -- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration
     self:RegisterEvent("UNIT_NAME_UPDATE");
     self:RegisterEvent("GROUP_ROSTER_UPDATE");
     LSM = Gladius.LSM

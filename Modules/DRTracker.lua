@@ -46,7 +46,7 @@ end
 
 
 function DRTracker:OnEnable()
-	self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	-- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration
 	LSM = Gladius.LSM
 	if not self.frame then
 		self.frame = { }

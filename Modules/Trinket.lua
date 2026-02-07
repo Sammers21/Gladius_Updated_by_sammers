@@ -44,7 +44,7 @@ local Trinket = Gladius:NewModule("Trinket", false, true, {
 })
 
 function Trinket:OnEnable()
-	self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	-- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration
 	self:RegisterEvent("ARENA_CROWD_CONTROL_SPELL_UPDATE");
 	LSM = Gladius.LSM
 	if not self.frame then
@@ -808,7 +808,7 @@ function Trinket:GetOptions()
 end
 -- Trinket stuff
 function Trinket:OnEnable()
-    self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    -- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration
     self:RegisterEvent("ARENA_CROWD_CONTROL_SPELL_UPDATE");
     self:RegisterEvent("GROUP_ROSTER_UPDATE");
     LSM = Gladius.LSM

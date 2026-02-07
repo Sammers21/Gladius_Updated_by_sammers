@@ -48,7 +48,7 @@ local select = select
 local Interrupt = Gladius:NewModule("Interrupts", false, false, {InterruptFrameLevel = 5},{})
 
 function Interrupt:OnEnable()
-	self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	-- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration
 end
 
 function Interrupt:OnDisable()
