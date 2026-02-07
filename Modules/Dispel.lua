@@ -198,7 +198,7 @@ function Dispel:CreateFrame(unit)
 	-- create frame
 	self.frame[unit] = CreateFrame("CheckButton", "Gladius"..self.name.."Frame"..unit, button, "ActionButtonTemplate")
 	self.frame[unit]:EnableMouse(false)
-	self.frame[unit]:SetNormalTexture("Interface\\AddOns\\Gladius\\Images\\Gloss")
+	self.frame[unit]:SetNormalTexture("Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Gloss")
 	self.frame[unit].texture = _G[self.frame[unit]:GetName().."Icon"]
 	self.frame[unit].normalTexture = _G[self.frame[unit]:GetName().."NormalTexture"]
 	self.frame[unit].cooldown = _G[self.frame[unit]:GetName().."Cooldown"]
@@ -271,7 +271,7 @@ function Dispel:Update(unit)
 	self.frame[unit].normalTexture:SetWidth(self.frame[unit]:GetWidth() + self.frame[unit]:GetWidth() * 0.4)
 	self.frame[unit].normalTexture:ClearAllPoints()
 	self.frame[unit].normalTexture:SetPoint("CENTER", 0, 0)
-	self.frame[unit]:SetNormalTexture("Interface\\AddOns\\Gladius\\Images\\Gloss")
+	self.frame[unit]:SetNormalTexture("Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Gloss")
 	self.frame[unit].texture:ClearAllPoints()
 	self.frame[unit].texture:SetPoint("TOPLEFT", self.frame[unit], "TOPLEFT")
 	self.frame[unit].texture:SetPoint("BOTTOMRIGHT", self.frame[unit], "BOTTOMRIGHT")

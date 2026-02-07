@@ -537,7 +537,7 @@ function ClassIcon:CreateFrame(unit)
 	-- create frame
 	self.frame[unit] = CreateFrame("CheckButton", "Gladius"..self.name.."Frame"..unit, button, "ActionButtonTemplate")
 	self.frame[unit]:EnableMouse(false)
-	self.frame[unit]:SetNormalTexture("Interface\\AddOns\\Gladius\\Images\\Gloss")
+	self.frame[unit]:SetNormalTexture("Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Gloss")
 	self.frame[unit].texture = _G[self.frame[unit]:GetName().."Icon"]
 	self.frame[unit].normalTexture = _G[self.frame[unit]:GetName().."NormalTexture"]
 	self.frame[unit].cooldown = _G[self.frame[unit]:GetName().."Cooldown"]
@@ -627,7 +627,7 @@ function ClassIcon:Update(unit)
 	unitFrame.normalTexture:SetWidth(unitFrame:GetWidth() + unitFrame:GetWidth() * 0.4)
 	unitFrame.normalTexture:ClearAllPoints()
 	unitFrame.normalTexture:SetPoint("CENTER", 0, 0)
-	unitFrame:SetNormalTexture("Interface\\AddOns\\Gladius\\Images\\Gloss")
+	unitFrame:SetNormalTexture("Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Gloss")
 	unitFrame.texture:ClearAllPoints()
 	unitFrame.texture:SetPoint("TOPLEFT", unitFrame, "TOPLEFT")
 	unitFrame.texture:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT")

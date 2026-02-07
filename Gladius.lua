@@ -292,9 +292,9 @@ function Gladius:OnInitialize()
 
 	-- libsharedmedia
 	self.LSM = LibStub("LibSharedMedia-3.0")
-	self.LSM:Register(self.LSM.MediaType.STATUSBAR, "Bars", "Interface\\AddOns\\Gladius\\Images\\Bars")
-	self.LSM:Register(self.LSM.MediaType.STATUSBAR, "Minimalist", "Interface\\AddOns\\Gladius\\Images\\Minimalist")
-	self.LSM:Register(self.LSM.MediaType.STATUSBAR, "Smooth", "Interface\\AddOns\\Gladius\\Images\\Smooth")
+	self.LSM:Register(self.LSM.MediaType.STATUSBAR, "Bars", "Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Bars")
+	self.LSM:Register(self.LSM.MediaType.STATUSBAR, "Minimalist", "Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Minimalist")
+	self.LSM:Register(self.LSM.MediaType.STATUSBAR, "Smooth", "Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Smooth")
 
 	-- test environment
 	self.test = false

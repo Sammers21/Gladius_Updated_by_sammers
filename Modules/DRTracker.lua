@@ -93,7 +93,7 @@ function DRTracker:UpdateIcon(unit, drCat)
 	tracked.reset = 0
 	tracked:SetWidth(self.frame[unit]:GetHeight())
 	tracked:SetHeight(self.frame[unit]:GetHeight())
-	tracked:SetNormalTexture("Interface\\AddOns\\Gladius\\Images\\Gloss")
+	tracked:SetNormalTexture("Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Gloss")
 	tracked.texture = _G[tracked:GetName().."Icon"]
 	tracked.normalTexture = _G[tracked:GetName().."NormalTexture"]
 
@@ -116,7 +116,7 @@ function DRTracker:UpdateIcon(unit, drCat)
 	tracked.normalTexture:SetWidth(self.frame[unit]:GetWidth() + self.frame[unit]:GetWidth() * 0.4)
 	tracked.normalTexture:ClearAllPoints()
 	tracked.normalTexture:SetPoint("CENTER", 0, 0)
-	tracked:SetNormalTexture("Interface\\AddOns\\Gladius\\Images\\Gloss")
+	tracked:SetNormalTexture("Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Gloss")
 	tracked.texture:ClearAllPoints()
 	tracked.texture:SetPoint("TOPLEFT", tracked, "TOPLEFT")
 	tracked.texture:SetPoint("BOTTOMRIGHT", tracked, "BOTTOMRIGHT")
