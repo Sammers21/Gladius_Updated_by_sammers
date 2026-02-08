@@ -60,15 +60,20 @@ function CastBar:OnEnable()
 	if not self.frame then
 		self.frame = { }
 	end
-	if not self.blizzCastBars then
-		self.blizzCastBars = {}
-	end
+	self.blizzCastBars = {}
+	self.retryTimers = {}
 end
 
 function CastBar:OnDisable()
 	self:UnregisterAllEvents()
 	for unit in pairs(self.frame) do
 		self.frame[unit]:SetAlpha(0)
+	end
+	if self.retryTimers then
+		for id, ticker in pairs(self.retryTimers) do
+			ticker:Cancel()
+		end
+		self.retryTimers = {}
 	end
 end
 
@@ -492,24 +497,250 @@ function CastBar:Update(unit)
 	self.frame[unit]:SetAlpha(0)
 end
 
+-- Steal Blizzard's CastingBarFrame and apply full Gladius styling.
+-- Returns true if successful, false if the bar was not found.
+function CastBar:StealBlizzCastBar(unit, id)
+	local blizzFrame = _G["CompactArenaFrameMember" .. id]
+	if not blizzFrame or not blizzFrame.CastingBarFrame then
+		return false
+	end
+	if self.blizzCastBars[id] then
+		return true
+	end
+
+	local castBar = blizzFrame.CastingBarFrame
+	local bar = self.frame[unit]
+
+	-- Reparent to Gladius button, position to match the custom layout frame
+	castBar:SetParent(Gladius.buttons[unit])
+	castBar:ClearAllPoints()
+	castBar:SetAllPoints(bar)
+	castBar:SetFrameStrata("HIGH")
+	castBar:SetFrameLevel(bar:GetFrameLevel() + 1)
+
+	-- Apply Gladius texture and color
+	local tex = LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture)
+	castBar:SetStatusBarTexture(tex)
+	local barTex = castBar:GetStatusBarTexture()
+	if barTex then
+		barTex:SetHorizTile(false)
+		barTex:SetVertTile(false)
+	end
+	local color = Gladius.db.castBarColor
+	castBar:SetStatusBarColor(color.r, color.g, color.b, color.a)
+
+	-- Create Gladius visual elements as children of the Blizzard bar.
+	-- They auto-show/hide when the bar shows/hides (cast start/end).
+	if not castBar.__gladiusElements then
+		local bgColor = Gladius.db.castBarBackgroundColor
+
+		-- Background
+		castBar.__gladiusBg = castBar:CreateTexture(nil, "BACKGROUND")
+		castBar.__gladiusBg:SetAllPoints(castBar)
+
+		-- Spell icon
+		castBar.__gladiusIcon = castBar:CreateTexture(nil, "ARTWORK")
+		castBar.__gladiusIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+		-- Icon background
+		castBar.__gladiusIconBg = castBar:CreateTexture(nil, "BACKGROUND")
+
+		-- Spell name text
+		castBar.__gladiusCastText = castBar:CreateFontString(nil, "OVERLAY")
+		castBar.__gladiusCastText:SetShadowOffset(1, -1)
+		castBar.__gladiusCastText:SetShadowColor(0, 0, 0, 1)
+
+		-- Time text
+		castBar.__gladiusTimeText = castBar:CreateFontString(nil, "OVERLAY")
+		castBar.__gladiusTimeText:SetShadowOffset(1, -1)
+		castBar.__gladiusTimeText:SetShadowColor(0, 0, 0, 1)
+
+		castBar.__gladiusElements = true
+	end
+
+	-- Apply current settings to all Gladius elements
+	self:ApplyBlizzBarStyle(castBar)
+
+	-- Hide Blizzard's own decorations (only once)
+	if not castBar.__gladiusHidden then
+		if castBar.Text then castBar.Text:SetAlpha(0) end
+		if castBar.Icon then castBar.Icon:SetAlpha(0) end
+		if castBar.Border then castBar.Border:SetAlpha(0) end
+		if castBar.BorderShield then castBar.BorderShield:SetAlpha(0) end
+		if castBar.Spark then castBar.Spark:SetAlpha(0) end
+		if castBar.Flash then castBar.Flash:SetAlpha(0) end
+		-- Hide Blizzard background regions
+		local regions = {castBar:GetRegions()}
+		for _, region in ipairs(regions) do
+			if region:GetObjectType() == "Texture"
+				and region ~= castBar:GetStatusBarTexture()
+				and region ~= castBar.__gladiusBg
+				and region ~= castBar.__gladiusIcon
+				and region ~= castBar.__gladiusIconBg then
+				region:SetAlpha(0)
+			end
+		end
+		castBar.__gladiusHidden = true
+	end
+
+	-- Hook events (only once per bar)
+	if not castBar.__gladiusHooked then
+		-- Sync spell icon and text from Blizzard's hidden elements
+		castBar:HookScript("OnShow", function(cb)
+			CastBar:SyncFromBlizzBar(unit, cb)
+		end)
+
+		castBar:HookScript("OnEvent", function(cb, event, eventUnit)
+			if eventUnit ~= unit then return end
+			CastBar:SyncFromBlizzBar(unit, cb)
+		end)
+
+		-- Update time text every frame
+		castBar:HookScript("OnUpdate", function(cb)
+			if not Gladius.db.castTimeText or not cb:IsShown() then return end
+			local value = cb:GetValue()
+			local minVal, maxVal = cb:GetMinMaxValues()
+			if maxVal > minVal then
+				local remaining
+				if cb.channeling then
+					remaining = value - minVal
+				else
+					remaining = maxVal - value
+				end
+				if remaining >= 0 then
+					cb.__gladiusTimeText:SetFormattedText("%.1f", remaining)
+				end
+			end
+		end)
+
+		-- Clear text/icon when cast ends
+		castBar:HookScript("OnHide", function(cb)
+			if cb.__gladiusCastText then cb.__gladiusCastText:SetText("") end
+			if cb.__gladiusTimeText then cb.__gladiusTimeText:SetText("") end
+			if cb.__gladiusIcon then cb.__gladiusIcon:SetAlpha(0) end
+		end)
+
+		castBar.__gladiusHooked = true
+	end
+
+	self.blizzCastBars[id] = castBar
+	return true
+end
+
+-- Apply current Gladius settings to the visual elements on a stolen Blizzard bar.
+function CastBar:ApplyBlizzBarStyle(castBar)
+	local bgColor = Gladius.db.castBarBackgroundColor
+	local tex = LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture)
+
+	-- Background
+	castBar.__gladiusBg:SetTexture(tex)
+	castBar.__gladiusBg:SetVertexColor(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
+	castBar.__gladiusBg:SetHorizTile(false)
+	castBar.__gladiusBg:SetVertTile(false)
+
+	-- Icon sizing and positioning
+	local iconSize = castBar:GetHeight()
+	if iconSize < 1 then iconSize = Gladius.db.castBarHeight end
+	castBar.__gladiusIcon:SetSize(iconSize, iconSize)
+	castBar.__gladiusIcon:ClearAllPoints()
+	castBar.__gladiusIcon:SetPoint(
+		Gladius.db.castIconPosition == "LEFT" and "RIGHT" or "LEFT",
+		castBar,
+		Gladius.db.castIconPosition
+	)
+	castBar.__gladiusIcon:SetAlpha(Gladius.db.castIcon and 0 or 0) -- hidden until cast starts
+
+	castBar.__gladiusIconBg:ClearAllPoints()
+	castBar.__gladiusIconBg:SetAllPoints(castBar.__gladiusIcon)
+	castBar.__gladiusIconBg:SetTexture(tex)
+	castBar.__gladiusIconBg:SetVertexColor(bgColor.r, bgColor.g, bgColor.b, Gladius.db.castIcon and bgColor.a or 0)
+
+	-- Spell name text
+	castBar.__gladiusCastText:SetFont(LSM:Fetch(LSM.MediaType.FONT, Gladius.db.globalFont), Gladius.db.castTextSize)
+	local textColor = Gladius.db.castTextColor
+	castBar.__gladiusCastText:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a)
+	castBar.__gladiusCastText:SetJustifyH(Gladius.db.castTextAlign)
+	castBar.__gladiusCastText:ClearAllPoints()
+	castBar.__gladiusCastText:SetPoint(Gladius.db.castTextAlign, Gladius.db.castTextOffsetX, Gladius.db.castTextOffsetY)
+
+	-- Time text
+	castBar.__gladiusTimeText:SetFont(LSM:Fetch(LSM.MediaType.FONT, Gladius.db.globalFont), Gladius.db.castTimeTextSize)
+	local timeColor = Gladius.db.castTimeTextColor
+	castBar.__gladiusTimeText:SetTextColor(timeColor.r, timeColor.g, timeColor.b, timeColor.a)
+	castBar.__gladiusTimeText:SetJustifyH(Gladius.db.castTimeTextAlign)
+	castBar.__gladiusTimeText:ClearAllPoints()
+	castBar.__gladiusTimeText:SetPoint(Gladius.db.castTimeTextAlign, Gladius.db.castTimeTextOffsetX, Gladius.db.castTimeTextOffsetY)
+end
+
+-- Sync spell data from Blizzard's hidden elements to Gladius elements.
+function CastBar:SyncFromBlizzBar(unit, blizzBar)
+	if not Gladius.buttons[unit] then return end
+
+	-- Sync icon
+	if blizzBar.Icon and Gladius.db.castIcon then
+		local texture = blizzBar.Icon:GetTexture()
+		if texture then
+			blizzBar.__gladiusIcon:SetTexture(texture)
+			blizzBar.__gladiusIcon:SetAlpha(1)
+		end
+	end
+
+	-- Sync spell name
+	if blizzBar.Text and Gladius.db.castText then
+		blizzBar.__gladiusCastText:SetText(blizzBar.Text:GetText() or "")
+	end
+
+	-- Apply interruptible/uninterruptible color + texture
+	if blizzBar.notInterruptible then
+		local color = Gladius.db.castBarColorUninterruptible
+		blizzBar:SetStatusBarColor(color.r, color.g, color.b, color.a)
+		blizzBar:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
+	else
+		local color = Gladius.db.castBarColor
+		blizzBar:SetStatusBarColor(color.r, color.g, color.b, color.a)
+		blizzBar:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
+	end
+	local barTex = blizzBar:GetStatusBarTexture()
+	if barTex then
+		barTex:SetHorizTile(false)
+		barTex:SetVertTile(false)
+	end
+end
+
 function CastBar:Show(unit)
-	-- Keep custom bar hidden - it's only used for module frame tracking/positioning
+	-- In test mode, show the custom frame (Blizzard bars don't exist in test)
+	if Gladius.test then
+		self.frame[unit]:SetAlpha(1)
+		return
+	end
+
+	-- Keep custom frame invisible (it provides layout height/position only)
 	self.frame[unit]:SetAlpha(0)
-	-- Steal Blizzard's CastingBarFrame for this arena unit
+	self.frame[unit]:SetScript("OnUpdate", nil)
+
 	local id = tonumber(unit:match("arena(%d)"))
-	if id and not self.blizzCastBars[id] then
-		local blizzFrame = _G["CompactArenaFrameMember" .. id]
-		if blizzFrame and blizzFrame.CastingBarFrame then
-			local castBar = blizzFrame.CastingBarFrame
-			castBar:SetParent(Gladius.buttons[unit])
-			castBar:ClearAllPoints()
-			local parent = Gladius:GetParent(unit, Gladius.db.castBarAttachTo)
-			castBar:SetPoint(Gladius.db.castBarAnchor, parent, Gladius.db.castBarRelativePoint, Gladius.db.castBarOffsetX, Gladius.db.castBarOffsetY)
-			castBar:SetFrameStrata("HIGH")
-			local width = Gladius.db.castBarAdjustWidth and Gladius.db.barWidth or Gladius.db.castBarWidth
-			castBar:SetWidth(width)
-			castBar:SetHeight(Gladius.db.castBarHeight)
-			self.blizzCastBars[id] = castBar
+	if not id then return end
+
+	-- Try to steal Blizzard's CastingBarFrame
+	if not self.blizzCastBars[id] then
+		local found = self:StealBlizzCastBar(unit, id)
+		-- Retry if not found immediately
+		if not found and not self.retryTimers[id] then
+			local attempts = 0
+			self.retryTimers[id] = C_Timer.NewTicker(0.5, function()
+				attempts = attempts + 1
+				if not Gladius.buttons[unit] then
+					self.retryTimers[id]:Cancel()
+					self.retryTimers[id] = nil
+					return
+				end
+				if self:StealBlizzCastBar(unit, id) or attempts >= 20 then
+					if self.retryTimers[id] then
+						self.retryTimers[id]:Cancel()
+						self.retryTimers[id] = nil
+					end
+				end
+			end)
 		end
 	end
 end
@@ -525,6 +756,16 @@ function CastBar:Reset(unit)
 		self.frame[unit].timeText:SetText("")
 	end
 	self.frame[unit]:SetAlpha(0)
+
+	-- Clear stolen Blizzard cast bar reference so it can be re-stolen next arena
+	local id = tonumber(unit:match("arena(%d)"))
+	if id then
+		self.blizzCastBars[id] = nil
+		if self.retryTimers and self.retryTimers[id] then
+			self.retryTimers[id]:Cancel()
+			self.retryTimers[id] = nil
+		end
+	end
 end
 
 function CastBar:Test(unit)
