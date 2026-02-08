@@ -15,4 +15,4 @@ It's WoW arena frame addon.
 
 ## DR Tracking
 
-Since WoW 12.0 (Midnight), `COMBAT_LOG_EVENT_UNFILTERED` is protected and cannot be used by addons to track diminishing returns. Instead, the DRTracker module reparents Blizzard's built-in `SpellDiminishStatusTray` from `CompactArenaFrameMember<N>` onto the Gladius unit button frames. The tray's internal item anchoring methods (`AnchorFirstTrayItem` / `AnchorNextTrayItem`) are overridden to reverse the growth direction when the tray is positioned to the left of the attach point, so DR icons grow away from the frame instead of overlapping the class icon and health bar.
+Since WoW 12.0 (Midnight), `COMBAT_LOG_EVENT_UNFILTERED` is protected and cannot be used by addons to track diminishing returns. Instead, the DRTracker module reparents Blizzard's built-in `SpellDiminishStatusTray` from `CompactArenaFrameMember<N>` onto the Gladius unit button frames and scales/repositions it. To reduce taint risk with secret values, avoid hooking or overriding Blizzard tray internals.

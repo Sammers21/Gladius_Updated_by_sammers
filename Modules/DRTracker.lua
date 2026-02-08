@@ -17,21 +17,9 @@ local CreateFontString = CreateFontString
 local CreateFrame = CreateFrame
 local GetSpellTexture = GetSpellTexture
 local GetTime = GetTime
+local IsInInstance = IsInInstance
 local UnitGUID = UnitGUID
 
--- Helper to resize a Blizzard DR tray item to match Gladius DR size settings
-local function ResizeDRTrayItem(trayItem, size)
-	trayItem:SetSize(size, size)
-	if trayItem.Icon then
-		trayItem.Icon:SetSize(size, size)
-	end
-	if trayItem.Cooldown then
-		trayItem.Cooldown:SetSize(size, size)
-	end
-	if trayItem.ImmunityIndicator then
-		trayItem.ImmunityIndicator:SetSize(size, size)
-	end
-end
 
 local DRTracker = Gladius:NewModule("DRTracker", false, true, {
 	drTrackerAttachTo = "ClassIcon",
@@ -67,9 +55,11 @@ function DRTracker:OnEnable()
 		self.frame = { }
 	end
 	self.blizzDRTrays = {}
+	self.originalDRTrayState = {}
 	self.retryTimers = {}
-	-- Enable Blizzard's built-in DR display
-	C_CVar.SetCVar("spellDiminishPVPEnemiesEnabled", "1")
+	self.drCVarEnabled = false
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", "HandleZoneChange")
+	self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "HandleZoneChange")
 end
 
 function DRTracker:OnDisable()
@@ -77,6 +67,13 @@ function DRTracker:OnDisable()
 	for _, frame in pairs(self.frame) do
 		frame:SetAlpha(0)
 	end
+	if self.blizzDRTrays then
+		for id in pairs(self.blizzDRTrays) do
+			self:RestoreBlizzDRTray(id)
+		end
+		self.blizzDRTrays = {}
+	end
+	self.originalDRTrayState = {}
 	-- Cancel any pending retry timers
 	if self.retryTimers then
 		for id, ticker in pairs(self.retryTimers) do
@@ -84,6 +81,7 @@ function DRTracker:OnDisable()
 		end
 		self.retryTimers = {}
 	end
+	self.drCVarEnabled = false
 end
 
 function DRTracker:OnProfileChanged()
@@ -305,6 +303,69 @@ function DRTracker:Update(unit)
 	self.frame[unit]:SetAlpha(0)
 end
 
+-- Restore Blizzard DR tray to its original parent/position/state.
+function DRTracker:RestoreBlizzDRTray(id)
+	local drTray = self.blizzDRTrays and self.blizzDRTrays[id]
+	if not drTray then
+		return
+	end
+
+	local state = self.originalDRTrayState and self.originalDRTrayState[id]
+	local blizzFrame = _G["CompactArenaFrameMember" .. id]
+
+	if state and state.parent then
+		drTray:SetParent(state.parent)
+	elseif blizzFrame then
+		drTray:SetParent(blizzFrame)
+	end
+
+	drTray:ClearAllPoints()
+	if state and state.point and state.relativePoint then
+		drTray:SetPoint(state.point, state.relativeTo, state.relativePoint, state.offsetX, state.offsetY)
+	elseif blizzFrame then
+		-- Fallback if original point info is unavailable.
+		drTray:SetPoint("TOPLEFT", blizzFrame, "TOPLEFT", 0, 0)
+	end
+
+	if state and state.frameStrata then
+		drTray:SetFrameStrata(state.frameStrata)
+	end
+	if state and state.frameLevel then
+		drTray:SetFrameLevel(state.frameLevel)
+	end
+	if state and state.scale and state.scale > 0 then
+		drTray:SetScale(state.scale)
+	end
+end
+
+-- Ensure Blizzard trays are restored when leaving arena or loading screens interrupt normal reset flow.
+function DRTracker:HandleZoneChange()
+	local _, instanceType = IsInInstance()
+	if instanceType == "arena" then
+		return
+	end
+
+	if self.blizzDRTrays then
+		for id in pairs(self.blizzDRTrays) do
+			self:RestoreBlizzDRTray(id)
+			self.blizzDRTrays[id] = nil
+		end
+	end
+
+	if self.originalDRTrayState then
+		self.originalDRTrayState = {}
+	end
+
+	if self.retryTimers then
+		for id, ticker in pairs(self.retryTimers) do
+			ticker:Cancel()
+			self.retryTimers[id] = nil
+		end
+	end
+
+	self.drCVarEnabled = false
+end
+
 -- Steal and configure Blizzard's SpellDiminishStatusTray for a given arena unit.
 -- Returns true if successful, false if the tray was not found.
 function DRTracker:StealBlizzDRTray(unit, id)
@@ -319,30 +380,20 @@ function DRTracker:StealBlizzDRTray(unit, id)
 
 	local drTray = blizzFrame.SpellDiminishStatusTray
 
-	-- Override Blizzard tray's internal item anchoring direction.
-	-- Blizzard default is LEFT-to-RIGHT, but when the tray is positioned
-	-- to the LEFT of the attach point (anchor=TOPRIGHT, relpoint=TOPLEFT),
-	-- items must grow RIGHT-to-LEFT to avoid overlapping the class icon
-	-- and health bar.
-	local growLeft = strfind(Gladius.db.drTrackerAnchor, "RIGHT")
-	if growLeft then
-		drTray.AnchorFirstTrayItem = function(tray, trayItem)
-			trayItem:ClearAllPoints()
-			trayItem:SetPoint("RIGHT", tray, "RIGHT", -2, 0)
-		end
-		drTray.AnchorNextTrayItem = function(tray, trayItem, previousTrayItem)
-			trayItem:ClearAllPoints()
-			trayItem:SetPoint("RIGHT", previousTrayItem, "LEFT", -2, 0)
-		end
-	else
-		drTray.AnchorFirstTrayItem = function(tray, trayItem)
-			trayItem:ClearAllPoints()
-			trayItem:SetPoint("LEFT", tray, "LEFT", 2, 0)
-		end
-		drTray.AnchorNextTrayItem = function(tray, trayItem, previousTrayItem)
-			trayItem:ClearAllPoints()
-			trayItem:SetPoint("LEFT", previousTrayItem, "RIGHT", 2, 0)
-		end
+	-- Keep original state so we can fully restore on reset/disable.
+	if not self.originalDRTrayState[id] then
+		local point, relativeTo, relativePoint, offsetX, offsetY = drTray:GetPoint(1)
+		self.originalDRTrayState[id] = {
+			parent = drTray:GetParent(),
+			point = point,
+			relativeTo = relativeTo,
+			relativePoint = relativePoint,
+			offsetX = offsetX,
+			offsetY = offsetY,
+			frameStrata = drTray:GetFrameStrata(),
+			frameLevel = drTray:GetFrameLevel(),
+			scale = drTray:GetScale(),
+		}
 	end
 
 	-- Reparent to Gladius button frame
@@ -351,54 +402,31 @@ function DRTracker:StealBlizzDRTray(unit, id)
 	local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
 	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX, Gladius.db.drTrackerOffsetY)
 	drTray:EnableMouse(false)
-	drTray:SetMouseClickEnabled(false)
+	if drTray.SetMouseClickEnabled then
+		drTray:SetMouseClickEnabled(false)
+	end
 	drTray:SetFrameStrata("HIGH")
 	drTray:SetFrameLevel(Gladius.db.drTrackerFrameLevel + 5)
 	drTray:Show()
 
-	-- Set tray size so items have room to render
+	-- Scale the tray to match Gladius DR size settings.
+	-- We CANNOT hook CreateTrayItemForCategory or iterate trayItemOrder/GetActiveTrayItemForCategory
+	-- because doing so taints the execution path, causing Blizzard's own internal code to fail
+	-- when it tries to use secret category values as table indices on Midnight (12.x).
+	-- SetScale uniformly scales the tray and all its children without touching any secret values.
 	local drSize = self.frame[unit] and self.frame[unit]:GetHeight() or Gladius.db.drTrackerSize
-	drTray:SetSize(drSize * 6, drSize)
-	drTray.gladiusDRSize = drSize
-
-	-- Hook CreateTrayItemForCategory to resize newly created items (only once)
-	if not drTray.__gladiusHooked then
-		local origCreateTrayItemForCategory = drTray.CreateTrayItemForCategory
-		drTray.CreateTrayItemForCategory = function(tray, categoryInfo)
-			local newItem = origCreateTrayItemForCategory(tray, categoryInfo)
-			if newItem and tray.gladiusDRSize then
-				ResizeDRTrayItem(newItem, tray.gladiusDRSize)
-			end
-			return newItem
-		end
-		drTray.__gladiusHooked = true
+	local defaultItemSize = drTray.minimumHeight or 30
+	if defaultItemSize <= 0 then
+		defaultItemSize = 30
 	end
+	local scale = drSize / defaultItemSize
+	if scale <= 0 then
+		scale = 1
+	end
+	drTray:SetScale(scale)
 
 	self.blizzDRTrays[id] = drTray
-
-	-- Resize any currently active tray items
-	self:ApplyDRTraySize(id)
-
 	return true
-end
-
--- Apply Gladius DR size settings to all active items in a stolen Blizzard tray.
-function DRTracker:ApplyDRTraySize(id)
-	local drTray = self.blizzDRTrays[id]
-	if not drTray then return end
-
-	local drSize = drTray.gladiusDRSize or Gladius.db.drTrackerSize
-	if drTray.trayItemOrder then
-		for _, category in ipairs(drTray.trayItemOrder) do
-			local trayItem = drTray:GetActiveTrayItemForCategory(category)
-			if trayItem then
-				ResizeDRTrayItem(trayItem, drSize)
-			end
-		end
-	end
-	if drTray.RefreshTrayLayout then
-		drTray:RefreshTrayLayout()
-	end
 end
 
 function DRTracker:Show(unit)
@@ -408,10 +436,32 @@ function DRTracker:Show(unit)
 		return
 	end
 
+	local id = tonumber(unit:match("arena(%d)"))
+
+	local _, instanceType = IsInInstance()
+	if instanceType ~= "arena" then
+		if id and self.blizzDRTrays and self.blizzDRTrays[id] then
+			self:RestoreBlizzDRTray(id)
+			self.blizzDRTrays[id] = nil
+			if self.originalDRTrayState then
+				self.originalDRTrayState[id] = nil
+			end
+		end
+		self.frame[unit]:SetAlpha(0)
+		return
+	end
+
+	if not self.drCVarEnabled then
+		-- Enable Blizzard's built-in DR tray only when actually needed in arena.
+		pcall(function()
+			C_CVar.SetCVar("spellDiminishPVPEnemiesEnabled", "1")
+		end)
+		self.drCVarEnabled = true
+	end
+
 	-- Keep custom DR frame hidden (CLEU is protected on Midnight)
 	self.frame[unit]:SetAlpha(0)
 
-	local id = tonumber(unit:match("arena(%d)"))
 	if not id then return end
 
 	-- Try to steal Blizzard's SpellDiminishStatusTray
@@ -437,9 +487,6 @@ function DRTracker:Show(unit)
 				end
 			end)
 		end
-	else
-		-- Already stolen — just update size in case settings changed
-		self:ApplyDRTraySize(id)
 	end
 end
 
@@ -461,7 +508,11 @@ function DRTracker:Reset(unit)
 	-- Clear stolen Blizzard tray reference so it can be re-stolen next arena
 	local id = tonumber(unit:match("arena(%d)"))
 	if id then
+		self:RestoreBlizzDRTray(id)
 		self.blizzDRTrays[id] = nil
+		if self.originalDRTrayState then
+			self.originalDRTrayState[id] = nil
+		end
 		if self.retryTimers and self.retryTimers[id] then
 			self.retryTimers[id]:Cancel()
 			self.retryTimers[id] = nil

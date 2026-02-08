@@ -596,20 +596,27 @@ function CastBar:StealBlizzCastBar(unit, id)
 		end)
 
 		-- Update time text every frame
+		-- GetValue/GetMinMaxValues return secret values for arena units on Midnight.
+		-- Wrap in pcall so arithmetic on secrets silently fails instead of erroring.
 		castBar:HookScript("OnUpdate", function(cb)
 			if not Gladius.db.castTimeText or not cb:IsShown() then return end
-			local value = cb:GetValue()
-			local minVal, maxVal = cb:GetMinMaxValues()
-			if maxVal > minVal then
-				local remaining
-				if cb.channeling then
-					remaining = value - minVal
-				else
-					remaining = maxVal - value
+			local ok = pcall(function()
+				local value = cb:GetValue()
+				local minVal, maxVal = cb:GetMinMaxValues()
+				if maxVal > minVal then
+					local remaining
+					if cb.channeling then
+						remaining = value - minVal
+					else
+						remaining = maxVal - value
+					end
+					if remaining >= 0 then
+						cb.__gladiusTimeText:SetFormattedText("%.1f", remaining)
+					end
 				end
-				if remaining >= 0 then
-					cb.__gladiusTimeText:SetFormattedText("%.1f", remaining)
-				end
+			end)
+			if not ok and cb.__gladiusTimeText then
+				cb.__gladiusTimeText:SetText("")
 			end
 		end)
 
@@ -675,31 +682,50 @@ end
 -- Sync spell data from Blizzard's hidden elements to Gladius elements.
 function CastBar:SyncFromBlizzBar(unit, blizzBar)
 	if not Gladius.buttons[unit] then return end
-
-	-- Sync icon
-	if blizzBar.Icon and Gladius.db.castIcon then
-		local texture = blizzBar.Icon:GetTexture()
-		if texture then
-			blizzBar.__gladiusIcon:SetTexture(texture)
-			blizzBar.__gladiusIcon:SetAlpha(1)
+	-- Hidden Blizzard elements can contain secret-backed values on Midnight.
+	-- Keep all reads/tests inside pcall and fail safe to default styling.
+	local ok = pcall(function()
+		-- Sync icon
+		if blizzBar.Icon and Gladius.db.castIcon then
+			local texture = blizzBar.Icon:GetTexture()
+			if texture then
+				blizzBar.__gladiusIcon:SetTexture(texture)
+				blizzBar.__gladiusIcon:SetAlpha(1)
+			else
+				blizzBar.__gladiusIcon:SetAlpha(0)
+			end
+		else
+			blizzBar.__gladiusIcon:SetAlpha(0)
 		end
-	end
 
-	-- Sync spell name
-	if blizzBar.Text and Gladius.db.castText then
-		blizzBar.__gladiusCastText:SetText(blizzBar.Text:GetText() or "")
-	end
+		-- Sync spell name
+		if blizzBar.Text and Gladius.db.castText then
+			blizzBar.__gladiusCastText:SetText(blizzBar.Text:GetText())
+		else
+			blizzBar.__gladiusCastText:SetText("")
+		end
 
-	-- Apply interruptible/uninterruptible color + texture
-	if blizzBar.notInterruptible then
-		local color = Gladius.db.castBarColorUninterruptible
-		blizzBar:SetStatusBarColor(color.r, color.g, color.b, color.a)
-		blizzBar:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
-	else
+		-- Apply interruptible/uninterruptible color + texture
+		if blizzBar.notInterruptible then
+			local color = Gladius.db.castBarColorUninterruptible
+			blizzBar:SetStatusBarColor(color.r, color.g, color.b, color.a)
+			blizzBar:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTextureUninterruptible))
+		else
+			local color = Gladius.db.castBarColor
+			blizzBar:SetStatusBarColor(color.r, color.g, color.b, color.a)
+			blizzBar:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
+		end
+	end)
+
+	if not ok then
 		local color = Gladius.db.castBarColor
 		blizzBar:SetStatusBarColor(color.r, color.g, color.b, color.a)
 		blizzBar:SetStatusBarTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, Gladius.db.castBarTexture))
+		if blizzBar.__gladiusCastText then blizzBar.__gladiusCastText:SetText("") end
+		if blizzBar.__gladiusTimeText then blizzBar.__gladiusTimeText:SetText("") end
+		if blizzBar.__gladiusIcon then blizzBar.__gladiusIcon:SetAlpha(0) end
 	end
+
 	local barTex = blizzBar:GetStatusBarTexture()
 	if barTex then
 		barTex:SetHorizTile(false)
