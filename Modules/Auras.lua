@@ -62,10 +62,12 @@ local Auras = Gladius:NewModule("Auras", false, true, {
 })
 
 function Auras:OnEnable()
-	-- UNIT_AURA returns secret data for arena units in 12.0, aura display disabled
-	LSM = Gladius.LSM
+	-- UNIT_AURA returns secret data for arena units in 12.0, module fully disabled
 	self.buffFrame = self.buffFrame or { }
 	self.debuffFrame = self.debuffFrame or { }
+	Gladius:Print("|cffff5555Auras|r module disabled - not compatible with WoW 12.0 (secret values)")
+	self:Disable()
+	return
 end
 
 function Auras:OnDisable()

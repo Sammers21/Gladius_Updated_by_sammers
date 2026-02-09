@@ -41,14 +41,12 @@ local Announcements = Gladius:NewModule("Announcements", false, false, {
 })
 
 function Announcements:OnEnable()
-	-- Register events
-	self:RegisterEvent("UNIT_HEALTH")
-	self:RegisterEvent("UNIT_SPELLCAST_START")
-	self:RegisterEvent("UNIT_NAME_UPDATE")
-	-- Table holding messages to throttle
+	-- Most announcement data (UnitName, UnitClass, UnitHealth, spellID) returns
+	-- secret values for arena units in 12.0. Module disabled until compatible.
 	self.throttled = { }
-	-- enemy detected
 	self.enemy = { }
+	self:Disable()
+	return
 end
 
 function Announcements:OnDisable()
@@ -76,15 +74,22 @@ function Announcements:UNIT_NAME_UPDATE(event, unit)
 	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") then
 		return
 	end
-	if not Gladius.db.announcements.enemies or not UnitName(unit) then
+	if not Gladius.db.announcements.enemies then
 		return
 	end
-	local name = UnitName(unit)
-	if name == UNKNOWN or not name then
+	-- In 12.0, UnitName/UnitClass return secret values for arena units
+	-- that cannot be compared or formatted. pcall to handle gracefully.
+	local ok, name = pcall(function()
+		local n = UnitName(unit)
+		if not n or n == UNKNOWN then return nil end
+		return n
+	end)
+	if not ok or not name then
 		return
 	end
 	if not self.enemy[unit] then
-		self:Send(string.format("%s - %s", name, UnitClass(unit) or ""), 2, unit)
+		local classOk, class = pcall(UnitClass, unit)
+		self:Send(string.format("%s - %s", name, (classOk and class) or ""), 2, unit)
 		self.enemy[unit] = true
 	end
 end
@@ -112,7 +117,9 @@ function Announcements:UNIT_HEALTH(event, unit)
 	end)
 	if not ok then return end
 	if healthPercent < Gladius.db.announcements.healthThreshold then
-		self:Send(string.format(L["LOW HEALTH: %s (%s)"], UnitName(unit), UnitClass(unit)), 10, unit)
+		local nameOk, unitName = pcall(UnitName, unit)
+		local classOk, unitClass = pcall(UnitClass, unit)
+		self:Send(string.format(L["LOW HEALTH: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 10, unit)
 	end
 end
 
@@ -159,14 +166,21 @@ function Announcements:UNIT_SPELLCAST_START(event, unit, lineGUID, spellID)
 	-- pcall to handle the error gracefully.
 	local ok, isRes = pcall(function() return RES_SPELLS[spellID] end)
 	if ok and isRes then
-		self:Send(string.format(L["RESURRECTING: %s (%s)"], UnitName(unit), UnitClass(unit)), 2, unit)
+		local nameOk, unitName = pcall(UnitName, unit)
+		local classOk, unitClass = pcall(UnitClass, unit)
+		self:Send(string.format(L["RESURRECTING: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
 	end
 end
 
 -- Sends an announcement
 -- Param unit is only used for class coloring of messages
 function Announcements:Send(msg, throttle, unit)
-	local color = unit and RAID_CLASS_COLORS[UnitClass(unit)] or {r = 0, g = 1, b = 0}
+	-- In 12.0, UnitClass returns a secret value for arena units that can't be used as a table key.
+	local color = {r = 0, g = 1, b = 0}
+	if unit then
+		local ok, c = pcall(function() return RAID_CLASS_COLORS[UnitClass(unit)] end)
+		if ok and c then color = c end
+	end
 	local dest = Gladius.db.announcements.dest
 	local skirmish = IsArenaSkirmish()
 	local isArena, isRegistered = IsActiveBattlefieldArena()

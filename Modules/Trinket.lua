@@ -13,11 +13,14 @@ local strformat = string.format
 
 local CreateFrame = CreateFrame
 local GetSpellInfo = GetSpellInfo
+local GetSpellTexture = GetSpellTexture or (C_Spell and C_Spell.GetSpellTexture)
 local IsInInstance = IsInInstance
 local UnitClass = UnitClass
 local UnitFactionGroup = UnitFactionGroup
 local UnitLevel = UnitLevel
 local UnitName = UnitName
+
+local UNKNOWN = UNKNOWN
 
 local Trinket = Gladius:NewModule("Trinket", false, true, {
 	trinketAttachTo = "Frame",
@@ -44,11 +47,15 @@ local Trinket = Gladius:NewModule("Trinket", false, true, {
 })
 
 function Trinket:OnEnable()
-	-- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration
-	self:RegisterEvent("ARENA_CROWD_CONTROL_SPELL_UPDATE");
+	self:RegisterEvent("ARENA_COOLDOWNS_UPDATE")
+	self:RegisterEvent("ARENA_CROWD_CONTROL_SPELL_UPDATE")
+	self:RegisterEvent("GROUP_ROSTER_UPDATE")
 	LSM = Gladius.LSM
 	if not self.frame then
 		self.frame = { }
+	end
+	if not self.hookedBlizzTrinkets then
+		self.hookedBlizzTrinkets = {}
 	end
 end
 
@@ -117,17 +124,76 @@ end
 		end
 	end
 end]]
+function Trinket:ARENA_COOLDOWNS_UPDATE(event, unit)
+	if not unit or not strfind(unit, "arena") or strfind(unit, "pet") then
+		return
+	end
+	if not self.frame[unit] then return end
+	if C_PvP and C_PvP.GetArenaCrowdControlInfo then
+		local ok, ccSpellID, startTime, duration = pcall(C_PvP.GetArenaCrowdControlInfo, unit)
+		if ok and ccSpellID then
+			-- Update icon texture
+			if ccSpellID ~= self.frame[unit].spellID then
+				local spellTexture = GetSpellTexture(ccSpellID)
+				if spellTexture then
+					self.frame[unit].spellID = ccSpellID
+					self.frame[unit].texture:SetTexture(spellTexture)
+				end
+			end
+			-- Update cooldown
+			if startTime and startTime ~= 0 and duration and duration ~= 0 then
+				self.frame[unit].cooldown:SetCooldown(startTime / 1000.0, duration / 1000.0)
+				if not self.frame[unit].ccCooldownActive then
+					self.frame[unit].ccCooldownActive = true
+					self:UpdateTrinket(unit, duration / 1000.0)
+				end
+			else
+				self.frame[unit].ccCooldownActive = nil
+			end
+		end
+	end
+end
+
+function Trinket:HookBlizzTrinket(unit)
+	local id = tonumber(unit:match("arena(%d)"))
+	if not id then return false end
+	if self.hookedBlizzTrinkets[id] then return true end
+
+	local blizzFrame = _G["CompactArenaFrameMember" .. id]
+	if not blizzFrame then return false end
+	if not blizzFrame.CcRemoverFrame then return false end
+
+	self.hookedBlizzTrinkets[id] = true
+	local trinket = self
+
+	hooksecurefunc(blizzFrame.CcRemoverFrame.Cooldown, "SetCooldown", function(_, start, duration)
+		if not trinket.frame[unit] then return end
+		if start and duration and start > 0 and duration > 0 then
+			trinket.frame[unit].cooldown:SetCooldown(start, duration)
+			if not trinket.frame[unit].ccCooldownActive then
+				trinket.frame[unit].ccCooldownActive = true
+				trinket:UpdateTrinket(unit, duration)
+			end
+		end
+	end)
+
+	return true
+end
+
 function Trinket:ARENA_CROWD_CONTROL_SPELL_UPDATE(event, unit, spellID)
 	if Gladius.db.trinketFaction then return end
-	-- Find Correct Icon ty blizzard
 	local _, instanceType = IsInInstance()
 	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") then
 		return
 	end
-	if (spellID ~= self.frame[unit].spellID) then
-		local spellTexture = GetSpellTexture(spellID);
-		self.frame[unit].spellID = spellID;
-		self.frame[unit].texture:SetTexture(spellTexture);
+	if not self.frame[unit] then return end
+	-- Update icon only; cooldown is handled by ARENA_COOLDOWNS_UPDATE and CcRemoverFrame hook
+	if spellID and spellID ~= self.frame[unit].spellID then
+		local spellTexture = GetSpellTexture(spellID)
+		if spellTexture then
+			self.frame[unit].spellID = spellID
+			self.frame[unit].texture:SetTexture(spellTexture)
+		end
 	end
 end
 function Trinket:COMBAT_LOG_EVENT_UNFILTERED(event)
@@ -198,7 +264,9 @@ function Trinket:UpdateTrinket(unit, duration)
 	end
 	-- announcement
 	if Gladius.db.announcements.trinket then
-		Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["TRINKET USED: %s (%s)"], UnitName(unit) or "test", UnitClass(unit) or "test"), 2, unit)
+		local nameOk, unitName = pcall(UnitName, unit)
+		local classOk, unitClass = pcall(UnitClass, unit)
+		Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["TRINKET USED: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
 	end
 	if Gladius.db.announcements.trinket or Gladius.db.trinketGridStyleIcon then
 		self.frame[unit].timeleft = duration
@@ -212,7 +280,9 @@ function Trinket:UpdateTrinket(unit, duration)
 				end
 				-- announcement
 				if Gladius.db.announcements.trinket then
-					Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["TRINKET READY: %s (%s)"], UnitName(unit) or "", UnitClass(unit) or ""), 2, unit)
+					local nameOk, unitName = pcall(UnitName, unit)
+					local classOk, unitClass = pcall(UnitClass, unit)
+					Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["TRINKET READY: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
 				end
 				self.frame[unit]:SetScript("OnUpdate", nil)
 			end
@@ -382,6 +452,18 @@ function Trinket:Show(unit)
 	local testing = Gladius.test
 	-- show frame
 	self.frame[unit]:SetAlpha(1)
+	-- Hook Blizzard's CcRemoverFrame for trinket cooldown tracking (12.0)
+	if not testing then
+		if not self:HookBlizzTrinket(unit) then
+			C_Timer.After(0.5, function()
+				if not self:HookBlizzTrinket(unit) then
+					C_Timer.After(1.5, function()
+						self:HookBlizzTrinket(unit)
+					end)
+				end
+			end)
+		end
+	end
 	if Gladius.db.trinketGridStyleIcon then
 		self.frame[unit].texture:SetTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, "Minimalist"))
 		if not self.frame[unit].timeleft or (self.frame[unit].timeleft and self.frame[unit].timeleft <= 0) then
@@ -445,6 +527,7 @@ function Trinket:Reset(unit)
 	end
 	-- reset cooldown
 	self.frame[unit].timeleft = nil
+	self.frame[unit].ccCooldownActive = nil
 	self.frame[unit].cooldown:SetCooldown(0, 0)
 	-- hide
 	self.frame[unit]:SetAlpha(0)
@@ -807,15 +890,6 @@ function Trinket:GetOptions()
 	}
 end
 -- Trinket stuff
-function Trinket:OnEnable()
-    -- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration
-    self:RegisterEvent("ARENA_CROWD_CONTROL_SPELL_UPDATE");
-    self:RegisterEvent("GROUP_ROSTER_UPDATE");
-    LSM = Gladius.LSM
-    if not self.frame then
-        self.frame = { }
-    end
-end
 
 function Trinket:ResetTrinketShuffle()
     for i = 1, 3 do

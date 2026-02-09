@@ -25,6 +25,8 @@ local IsLoggedIn = IsLoggedIn
 local UnitAura = UnitAura
 local UnitCastingInfo = UnitCastingInfo
 local UnitIsDeadOrGhost = UnitIsDeadOrGhost
+local ReloadUI = ReloadUI
+local StaticPopup_Show = StaticPopup_Show
 
 local UIParent = UIParent
 
@@ -33,15 +35,36 @@ Gladius.eventHandler = CreateFrame("Frame")
 Gladius.eventHandler.events = { }
 Gladius.eventHandler.pendingEvents = { }
 
+if not StaticPopupDialogs["GLADIUS_MIDNIGHT_RELOAD"] then
+	StaticPopupDialogs["GLADIUS_MIDNIGHT_RELOAD"] = {
+		text = "Because of Midnight UI changes you need to reload so everything works properly.",
+		button1 = "Reload UI",
+		button2 = "Close",
+		OnAccept = function()
+			ReloadUI()
+		end,
+		timeout = 0,
+		whileDead = 1,
+		hideOnEscape = 1,
+		preferredIndex = 3,
+	}
+end
+
 Gladius.eventHandler:RegisterEvent("PLAYER_LOGIN")
 Gladius.eventHandler:RegisterEvent("ADDON_LOADED")
 Gladius.eventHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 Gladius.eventHandler:SetScript("OnEvent", function(self, event, ...)
-	if event == "PLAYER_REGEN_ENABLED" and next(self.pendingEvents) then
-		for pendingEvent in pairs(self.pendingEvents) do
-			self.pendingEvents[pendingEvent] = nil
-			Gladius:RegisterEvent(pendingEvent)
+	if event == "PLAYER_REGEN_ENABLED" then
+		if next(self.pendingEvents) then
+			for pendingEvent in pairs(self.pendingEvents) do
+				self.pendingEvents[pendingEvent] = nil
+				Gladius:RegisterEvent(pendingEvent)
+			end
+		end
+		-- Run deferred operations that require out-of-combat
+		if Gladius.pendingHideBlizz then
+			Gladius:HideBlizzArenaFrames()
 		end
 	end
 	if event == "PLAYER_LOGIN" then
@@ -113,6 +136,8 @@ end
 
 function Gladius:UnregisterAllEvents()
 	pcall(self.eventHandler.UnregisterAllEvents, self.eventHandler)
+	-- Always keep PLAYER_REGEN_ENABLED for deferred operations and pending event registration
+	pcall(self.eventHandler.RegisterEvent, self.eventHandler, "PLAYER_REGEN_ENABLED")
 end
 
 function Gladius:NewModule(key, bar, attachTo, defaults, templates)
@@ -384,6 +409,25 @@ function Gladius:ZONE_CHANGED_NEW_AREA()
 	self.instanceType = instanceType
 end
 
+function Gladius:HideBlizzArenaFrames()
+	if not self.blizzHider then
+		self.blizzHider = CreateFrame("Frame")
+		self.blizzHider:Hide()
+	end
+	if InCombatLockdown() then
+		-- Defer until combat ends
+		self.pendingHideBlizz = true
+		return
+	end
+	self.pendingHideBlizz = nil
+	if CompactArenaFrame then
+		CompactArenaFrame:SetParent(self.blizzHider)
+	end
+	if CompactArenaFrameTitle then
+		CompactArenaFrameTitle:SetParent(self.blizzHider)
+	end
+end
+
 function Gladius:JoinedArena()
 	-- special arena event
 	self:RegisterEvent("UNIT_NAME_UPDATE")
@@ -399,19 +443,66 @@ function Gladius:JoinedArena()
 	-- hide buttons
 	self:HideFrame()
 
+	-- Reset and re-hook Blizzard's DebuffFrame for CC display BEFORE hiding the frame
+	-- On /reload, Blizzard frames are recreated so old hooks are lost
+	local classIconModule = self.modules["ClassIcon"]
+	if classIconModule and classIconModule:IsEnabled() then
+		classIconModule.hookedBlizzDebuffs = {}
+		for i = 1, 5 do
+			classIconModule:HookBlizzDebuffs("arena" .. i)
+		end
+	end
+	-- Reset and re-hook Blizzard's CcRemoverFrame for trinket tracking
+	local trinketModule = self.modules["Trinket"]
+	if trinketModule and trinketModule:IsEnabled() then
+		trinketModule.hookedBlizzTrinkets = {}
+		for i = 1, 5 do
+			trinketModule:HookBlizzTrinket("arena" .. i)
+		end
+	end
+
+	-- Hook Blizzard's CompactArenaFrame name/health text BEFORE hiding
+	-- This allows us to capture name and HP values that are secret in 12.0
+	if not self.hookedBlizzData then
+		self.hookedBlizzData = {}
+	end
+	for i = 1, 5 do
+		local unit = "arena" .. i
+		if not self.hookedBlizzData[i] then
+			local blizzFrame = _G["CompactArenaFrameMember" .. i]
+			if blizzFrame then
+				self.hookedBlizzData[i] = true
+				-- Hook name text
+				if blizzFrame.name and blizzFrame.name.SetText then
+					hooksecurefunc(blizzFrame.name, "SetText", function(_, text)
+						if self.buttons[unit] and text and text ~= "" then
+							self.buttons[unit].nameText = text
+						end
+					end)
+				end
+				-- Hook health bar value
+				if blizzFrame.healthBar and blizzFrame.healthBar.SetValue then
+					hooksecurefunc(blizzFrame.healthBar, "SetValue", function(_, value)
+						if self.buttons[unit] then
+							self.buttons[unit].healthValue = value
+						end
+					end)
+				end
+				if blizzFrame.healthBar and blizzFrame.healthBar.SetMinMaxValues then
+					hooksecurefunc(blizzFrame.healthBar, "SetMinMaxValues", function(_, minVal, maxVal)
+						if self.buttons[unit] then
+							self.buttons[unit].healthMin = minVal
+							self.buttons[unit].healthMax = maxVal
+						end
+					end)
+				end
+			end
+		end
+	end
+
 	-- Hide Blizzard's CompactArenaFrame (Midnight 12.x)
-	if not self.blizzHider then
-		self.blizzHider = CreateFrame("Frame")
-		self.blizzHider:Hide()
-	end
-	if not InCombatLockdown() then
-		if CompactArenaFrame then
-			CompactArenaFrame:SetParent(self.blizzHider)
-		end
-		if CompactArenaFrameTitle then
-			CompactArenaFrameTitle:SetParent(self.blizzHider)
-		end
-	end
+	-- Deferred if in combat lockdown
+	self:HideBlizzArenaFrames()
 
 	-- background
 	if self.db.groupButtons then
@@ -435,11 +526,12 @@ function Gladius:JoinedArena()
 	if (numOpps and numOpps > 0) then
 		self:ARENA_PREP_OPPONENT_SPECIALIZATIONS()
 	end
+
+	self:ShowMidnightReloadWarning()
 end
 
 function Gladius:LeftArena()
 	self:HideFrame()
-
 	-- reset units
 	for unit, _ in pairs(self.buttons) do
 		Gladius.buttons[unit]:RegisterForDrag()
@@ -447,10 +539,24 @@ function Gladius:LeftArena()
 		self:ResetUnit(unit)
 	end
 
+	-- Clear reload warning flag so it shows again next arena session
+	self.db.midnightReloadShown = nil
+
 	-- unregister combat events
 	self:UnregisterAllEvents()
 	self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 	self:RegisterEvent("PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA")
+end
+
+function Gladius:ShowMidnightReloadWarning()
+	-- Only show once per arena session (persists across reloads via SavedVariables)
+	if self.db.midnightReloadShown then
+		return
+	end
+	self.db.midnightReloadShown = true
+	C_Timer.After(0.1, function()
+		StaticPopup_Show("GLADIUS_MIDNIGHT_RELOAD")
+	end)
 end
 
 function Gladius:UNIT_NAME_UPDATE(event, unit)

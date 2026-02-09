@@ -14,6 +14,7 @@ local strgmatch = string.gmatch
 local strgsub = string.gsub
 
 local UnitClass = UnitClass
+local UnitExists = UnitExists
 local UnitHealth = UnitHealth
 local UnitHealthMax = UnitHealthMax
 local UnitIsDeadOrGhost = UnitIsDeadOrGhost
@@ -85,7 +86,7 @@ local Tags = Gladius:NewModule("Tags", false, false, {
 
 function Tags:OnEnable()
 	LSM = Gladius.LSM
-	self.version = 4
+	self.version = 5
 	-- frame
 	if not self.frame then
 		self.frame = { }
@@ -206,7 +207,9 @@ function Tags:UpdateText(unit, text)
 		if tag then
 			local escapedText
 			-- clear the tag, if unit does not exist
-			if not Gladius.test and not UnitName(unitParameter) and not tag.preparation then
+			-- In 12.0 UnitName returns a secret for arena units; use UnitExists instead
+			local unitExists = UnitExists and UnitExists(unitParameter)
+			if not Gladius.test and not unitExists and not tag.preparation then
 				escapedText = ""
 			else
 				-- create function
@@ -820,11 +823,11 @@ end
 function Tags:GetTags()
 	return {
 		["name"] = {
-			func = "function(unit)\nreturn UnitName(unit) or unit\nend",
+			func = "function(unit)\nlocal ok, name = pcall(UnitName, unit)\nif ok and name then return name end\nif Gladius.buttons[unit] and Gladius.buttons[unit].nameText then return Gladius.buttons[unit].nameText end\nreturn unit\nend",
 			events = "UNIT_NAME_UPDATE",
 		},
 		["name:status"] = {
-			func = "function(unit)\nreturn UnitIsDeadOrGhost(unit) and Gladius.L[\"DEAD\"] or (UnitName(unit) or unit)\nend",
+			func = "function(unit)\nlocal dok, dead = pcall(UnitIsDeadOrGhost, unit)\nif dok and dead then return Gladius.L[\"DEAD\"] end\nlocal ok, name = pcall(UnitName, unit)\nif ok and name then return name end\nif Gladius.buttons[unit] and Gladius.buttons[unit].nameText then return Gladius.buttons[unit].nameText end\nreturn unit\nend",
 			events = "UNIT_NAME_UPDATE UNIT_HEALTH",
 		},
 		["class"] = {
@@ -838,7 +841,7 @@ function Tags:GetTags()
 			preparation = true
 		},
 		["race"] = {
-			func = "function(unit)\nreturn not Gladius.test and UnitRace(unit) or Gladius.testing[unit].unitRace\nend",
+			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].unitRace end\nlocal ok, race = pcall(UnitRace, unit)\nif ok and race then return race end\nreturn \"\"\nend",
 			events = "UNIT_NAME_UPDATE"
 		},
 		["spec"] = {
@@ -852,23 +855,23 @@ function Tags:GetTags()
 			preparation = true
 		},
 		["health"] = {
-			func = "function(unit)\nreturn not Gladius.test and UnitHealth(unit) or Gladius.testing[unit].health\nend",
+			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].health end\nlocal ok, v = pcall(UnitHealth, unit)\nif ok and v then return v end\nlocal b = Gladius.buttons[unit]\nif b and b.healthValue then return b.healthValue end\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["maxhealth"] = {
-			func = "function(unit)\nreturn not Gladius.test and UnitHealthMax(unit) or Gladius.testing[unit].maxHealth\nend",
+			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].maxHealth end\nlocal ok, v = pcall(UnitHealthMax, unit)\nif ok and v then return v end\nlocal b = Gladius.buttons[unit]\nif b and b.healthMax then return b.healthMax end\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["health:short"] = {
-			func = "function(unit)\nreturn not Gladius.test and UnitHealth(unit) or Gladius.testing[unit].health\nend",
+			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].health end\nlocal ok, v = pcall(UnitHealth, unit)\nif ok and v then return v end\nlocal b = Gladius.buttons[unit]\nif b and b.healthValue then return b.healthValue end\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["maxhealth:short"] = {
-			func = "function(unit)\nreturn not Gladius.test and UnitHealthMax(unit) or Gladius.testing[unit].maxHealth\nend",
+			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].maxHealth end\nlocal ok, v = pcall(UnitHealthMax, unit)\nif ok and v then return v end\nlocal b = Gladius.buttons[unit]\nif b and b.healthMax then return b.healthMax end\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["health:percentage"] = {
-			func = "function(unit)\nif Gladius.test then\nlocal health = Gladius.testing[unit].health\nlocal maxHealth = Gladius.testing[unit].maxHealth\nreturn strformat(\"%.1f%%\", (health / maxHealth * 100))\nend\nreturn strformat(\"%.1f%%\", UnitHealthPercent(unit, nil, CurveConstants.ScaleTo100))\nend",
+			func = "function(unit)\nif Gladius.test then\nlocal health = Gladius.testing[unit].health\nlocal maxHealth = Gladius.testing[unit].maxHealth\nreturn strformat(\"%.1f%%\", (health / maxHealth * 100))\nend\nlocal ok, pct = pcall(function() return UnitHealthPercent(unit, nil, CurveConstants.ScaleTo100) end)\nif ok and pct then return strformat(\"%.1f%%\", pct) end\nlocal b = Gladius.buttons[unit]\nif b and b.healthValue and b.healthMax and b.healthMax > 0 then\nreturn strformat(\"%.1f%%\", b.healthValue / b.healthMax * 100)\nend\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["power"] = {
@@ -888,7 +891,7 @@ function Tags:GetTags()
 			events = "UNIT_MAXPOWER UNIT_DISPLAYPOWER UNIT_NAME_UPDATE"
 		},
 		["power:percentage"] = {
-			func = "function(unit)\nif Gladius.test then\nlocal power = Gladius.testing[unit].power\nlocal maxPower = Gladius.testing[unit].maxPower\nreturn strformat(\"%.1f%%\", (power / maxPower * 100))\nend\nreturn strformat(\"%.1f%%\", UnitPowerPercent(unit, nil, CurveConstants.ScaleTo100))\nend",
+			func = "function(unit)\nif Gladius.test then\nlocal power = Gladius.testing[unit].power\nlocal maxPower = Gladius.testing[unit].maxPower\nreturn strformat(\"%.1f%%\", (power / maxPower * 100))\nend\nlocal ok, pct = pcall(function() return UnitPowerPercent(unit, nil, CurveConstants.ScaleTo100) end)\nif ok and pct then return strformat(\"%.1f%%\", pct) end\nreturn \"\"\nend",
 			events = "UNIT_POWER_UPDATE UNIT_MAXPOWER UNIT_DISPLAYPOWER UNIT_NAME_UPDATE"
 		},
 	}

@@ -32,6 +32,5 @@ Modules\Announcements.lua
 Modules\DRTracker.lua
 Modules\Timer.lua
 Modules\Layout.lua
-Modules\Dispel.lua
 Modules\Interrupt.lua
 Modules\Racial.lua

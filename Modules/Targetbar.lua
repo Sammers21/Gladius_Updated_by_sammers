@@ -125,7 +125,9 @@ function TargetBar:SetClassIcon(unit)
 	-- get unit class
 	local class
 	if not Gladius.test then
-		class = select(2, UnitClass(unit.."target"))
+		-- In 12.0, UnitClass may return a secret for arena targets. pcall for safety.
+		local ok, _, cls = pcall(UnitClass, unit.."target")
+		if ok then class = cls end
 	else
 		class = Gladius.testing[unit].unitClass
 	end
@@ -133,12 +135,16 @@ function TargetBar:SetClassIcon(unit)
 		-- color
 		local colorx = self:GetBarColor(class)
 		if not colorx then
-			-- fallback, when targeting a pet or totem 
+			-- fallback, when targeting a pet or totem
 			colorx = Gladius.db.targetBarColor
 		end
 		self.frame[unit]:SetStatusBarColor(colorx.r, colorx.g, colorx.b, colorx.a or 1)
-		local healthx, maxHealthx = UnitHealth(unit.."target"), UnitHealthMax(unit.."target")
-		self:UpdateHealth(unit, healthx, maxHealthx)
+		-- In 12.0, UnitHealth/UnitHealthMax may return secrets. pcall for safety.
+		local hOk, healthx = pcall(UnitHealth, unit.."target")
+		local mOk, maxHealthx = pcall(UnitHealthMax, unit.."target")
+		if hOk and mOk and healthx and maxHealthx then
+			self:UpdateHealth(unit, healthx, maxHealthx)
+		end
 		self.frame[unit].icon:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes")
 		local left, right, top, bottom = unpack(CLASS_BUTTONS[class])
 		if Gladius.db.targetBarIconCrop then
@@ -164,15 +170,21 @@ function TargetBar:UNIT_HEALTH(event, unit)
 	end
 	local foundUnit = nil
 	for u, _ in pairs(self.frame) do
-		if UnitGUID(unit) == UnitGUID(u.."target") then
+		-- In 12.0, UnitGUID may return secret values for arena units.
+		local ok, match = pcall(function() return UnitGUID(unit) == UnitGUID(u.."target") end)
+		if ok and match then
 			foundUnit = u
 		end
 	end
 	if not foundUnit then
 		return
 	end
-	local health, maxHealth = UnitHealth(foundUnit.."target"), UnitHealthMax(foundUnit.."target")
-	self:UpdateHealth(foundUnit, health, maxHealth)
+	-- In 12.0, UnitHealth/UnitHealthMax may return secrets. pcall for safety.
+	local hOk, health = pcall(UnitHealth, foundUnit.."target")
+	local mOk, maxHealth = pcall(UnitHealthMax, foundUnit.."target")
+	if hOk and mOk and health and maxHealth then
+		self:UpdateHealth(foundUnit, health, maxHealth)
+	end
 end
 
 function TargetBar:UpdateHealth(unit, health, maxHealth)
@@ -183,14 +195,16 @@ function TargetBar:UpdateHealth(unit, health, maxHealth)
 			self:Update(unit)
 		end
 	end
-	-- update min max values
-	self.frame[unit]:SetMinMaxValues(0, maxHealth)
-	-- inverse bar
-	if Gladius.db.targetBarInverse then
-		self.frame[unit]:SetValue(maxHealth - health)
-	else
-		self.frame[unit]:SetValue(health)
-	end
+	-- In 12.0, health values may be secrets if targeting arena opponents.
+	-- pcall to handle arithmetic safely.
+	local ok = pcall(function()
+		self.frame[unit]:SetMinMaxValues(0, maxHealth)
+		if Gladius.db.targetBarInverse then
+			self.frame[unit]:SetValue(maxHealth - health)
+		else
+			self.frame[unit]:SetValue(health)
+		end
+	end)
 end
 
 function TargetBar:UpdateColors(unit)
@@ -198,7 +212,8 @@ function TargetBar:UpdateColors(unit)
 	-- get unit class
 	local class
 	if not testing then
-		class = select(2, UnitClass(unit.."target"))
+		local ok, _, cls = pcall(UnitClass, unit.."target")
+		if ok then class = cls end
 	else
 		class = Gladius.testing[unit].unitClass
 	end
@@ -376,7 +391,8 @@ function TargetBar:Show(unit)
 	-- get unit class
 	local class
 	if not testing then
-		class = select(2, UnitClass(unit.."target"))
+		local ok, _, cls = pcall(UnitClass, unit.."target")
+		if ok then class = cls end
 	else
 		class = Gladius.testing[unit].unitClass
 	end

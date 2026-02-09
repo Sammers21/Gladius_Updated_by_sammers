@@ -13,10 +13,14 @@ local strformat = string.format
 
 local CreateFrame = CreateFrame
 local GetSpellInfo = GetSpellInfo
+local GetSpellTexture = GetSpellTexture or (C_Spell and C_Spell.GetSpellTexture)
 local IsInInstance = IsInInstance
 local UnitClass = UnitClass
 local UnitLevel = UnitLevel
 local UnitName = UnitName
+local UnitRace = UnitRace
+
+local UNKNOWN = UNKNOWN
 
 local unitRaceCDs = {
 	["HUMAN"] = { cooldown = 180, spellID = 59752, sharesCD = true },
@@ -101,11 +105,19 @@ function Racial:UNIT_NAME_UPDATE(event, unit)
 	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") then
 		return
 	end
-	local _,race =  UnitRace(unit);
-	race = string.upper(race);
-	local _, _, spellTexture = GetSpellInfo(unitRaceCDs[race].spellID);
-	self.frame[unit].race = race;
-	self.frame[unit].texture:SetTexture(spellTexture);
+	if not self.frame[unit] then return end
+	-- In 12.0, UnitRace returns a secret value for arena units.
+	-- pcall to handle the comparison/uppercase gracefully.
+	local ok, race = pcall(function()
+		local _, r = UnitRace(unit)
+		if not r then return nil end
+		return string.upper(r)
+	end)
+	if not ok or not race then return end
+	if not unitRaceCDs[race] then return end
+	local spellTexture = GetSpellTexture(unitRaceCDs[race].spellID)
+	self.frame[unit].race = race
+	self.frame[unit].texture:SetTexture(spellTexture)
 end
 
 function Racial:autoFixAll()
@@ -113,12 +125,16 @@ function Racial:autoFixAll()
 	if instanceType ~= "arena" then return end
 	for i=1,3 do
 		local unit = 'arena'..i
-		local _,race =  UnitRace(unit);
-		race = string.upper(race or 'HUMAN');
-		local _, _, spellTexture = GetSpellInfo(unitRaceCDs[race].spellID);
-		if (self.frame[unit]) then
-			self.frame[unit].race = race;
-			self.frame[unit].texture:SetTexture(spellTexture);
+		-- In 12.0, UnitRace returns a secret value for arena units.
+		local ok, race = pcall(function()
+			local _, r = UnitRace(unit)
+			if not r then return nil end
+			return string.upper(r)
+		end)
+		if ok and race and unitRaceCDs[race] and self.frame[unit] then
+			local spellTexture = GetSpellTexture(unitRaceCDs[race].spellID)
+			self.frame[unit].race = race
+			self.frame[unit].texture:SetTexture(spellTexture)
 		end
 	end
 end
@@ -152,7 +168,9 @@ function Racial:COMBAT_LOG_EVENT_UNFILTERED(event)
 
 	local unit
 	for i = 1, 5 do
-		if UnitGUID("arena"..i) == sourceGUID then
+		-- In 12.0, UnitGUID returns secret values for arena units.
+		local ok, match = pcall(function() return UnitGUID("arena"..i) == sourceGUID end)
+		if ok and match then
 			unit = "arena"..i
 			break
 		end
@@ -160,7 +178,15 @@ function Racial:COMBAT_LOG_EVENT_UNFILTERED(event)
 	if not unit or not self.frame[unit] then return end
 
 	self:autoFixAll()
-	local race = (self.frame[unit].race or string.upper(select(2, UnitRace(unit)) or "HUMAN"))
+	local race = self.frame[unit].race
+	if not race then
+		local ok, r = pcall(function()
+			local _, rr = UnitRace(unit)
+			return rr and string.upper(rr) or nil
+		end)
+		race = (ok and r) or nil
+	end
+	if not race then return end
 	if not unitRaceCDs[race] then return end
 
 	if unitRaceCDs[race].sharesCD then
@@ -196,22 +222,24 @@ end
 function Racial:UpdateRacial(unit, duration)
 	-- announcement
 	if Gladius.db.announcements.Racial then
-		Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["Racial USED: %s (%s)"], UnitName(unit) or "test", UnitClass(unit) or "test"), 2, unit)
+		local nameOk, unitName = pcall(UnitName, unit)
+		local classOk, unitClass = pcall(UnitClass, unit)
+		Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["Racial USED: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
 	end
-	--if Gladius.db.announcements.Racial then
-		self.frame[unit].timeleft = duration
-		self.frame[unit]:SetScript("OnUpdate", function(f, elapsed)
-			self.frame[unit].timeleft = self.frame[unit].timeleft - elapsed
-			if self.frame[unit].timeleft <= 0 then
-				self.frame[unit].timeleft = nil
-				-- announcement
-				if Gladius.db.announcements.Racial then
-					Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["Racial READY: %s (%s)"], UnitName(unit) or "", UnitClass(unit) or ""), 2, unit)
-				end
-				self.frame[unit]:SetScript("OnUpdate", nil)
+	self.frame[unit].timeleft = duration
+	self.frame[unit]:SetScript("OnUpdate", function(f, elapsed)
+		self.frame[unit].timeleft = self.frame[unit].timeleft - elapsed
+		if self.frame[unit].timeleft <= 0 then
+			self.frame[unit].timeleft = nil
+			-- announcement
+			if Gladius.db.announcements.Racial then
+				local nameOk, unitName = pcall(UnitName, unit)
+				local classOk, unitClass = pcall(UnitClass, unit)
+				Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["Racial READY: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
 			end
-		end)
-	--end
+			self.frame[unit]:SetScript("OnUpdate", nil)
+		end
+	end)
 	-- cooldown
 	Gladius:Call(Gladius.modules.Timer, "SetTimer", self.frame[unit], duration)
 end

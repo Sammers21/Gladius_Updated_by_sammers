@@ -15,6 +15,7 @@ local tostring = tostring
 local unpack = unpack
 
 local CreateFrame = CreateFrame
+local GetArenaOpponentSpec = GetArenaOpponentSpec
 local GetSpecializationInfoByID = GetSpecializationInfoByID
 local GetSpellInfo = GetSpellInfo
 local GetTime = GetTime
@@ -499,6 +500,20 @@ function ClassIcon:SetClassIcon(unit)
 		local frame = Gladius:GetUnitFrame(unit)
 		class = frame.class
 		specIcon = frame.specIcon
+		-- Fallback: try to get class from spec API if not set yet
+		if not class then
+			local id = tonumber(unit:match("arena(%d)"))
+			if id then
+				local specID = GetArenaOpponentSpec(id)
+				if specID and specID > 0 then
+					local _, _, _, icon, _, cls = GetSpecializationInfoByID(specID)
+					class = cls
+					specIcon = icon
+					frame.class = class
+					frame.specIcon = specIcon
+				end
+			end
+		end
 	else
 		class = Gladius.testing[unit].unitClass
 		local _, _, _, icon = GetSpecializationInfoByID(Gladius.testing[unit].unitSpecId)
@@ -590,7 +605,7 @@ function ClassIcon:Update(unit)
 	end
 
 	-- Secure frame
-	if self.IsDetached() then
+	if self:IsDetached() then
 		unitFrame.secure:SetAllPoints(unitFrame)
 		unitFrame.secure:SetHeight(unitFrame:GetHeight())
 		unitFrame.secure:SetWidth(unitFrame:GetWidth())
@@ -601,30 +616,19 @@ function ClassIcon:Update(unit)
 
 	unitFrame.texture:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes")
 	-- set frame mouse-interactable area
-	local left, right, top, bottom = Gladius.buttons[unit]:GetHitRectInsets()
+	local hitLeft, hitRight, hitTop, hitBottom = Gladius.buttons[unit]:GetHitRectInsets()
 	if self:GetAttachTo() == "Frame" and not self:IsDetached() then
 		if strfind(Gladius.db.classIconRelativePoint, "LEFT") then
-			left = - unitFrame:GetWidth() + Gladius.db.classIconOffsetX
+			hitLeft = - unitFrame:GetWidth() + Gladius.db.classIconOffsetX
 		else
-			right = - unitFrame:GetWidth() + - Gladius.db.classIconOffsetX
+			hitRight = - unitFrame:GetWidth() + - Gladius.db.classIconOffsetX
 		end
-		-- search for an attached frame
-		--[[for _, module in pairs(Gladius.modules) do
-			if (module.attachTo and module:GetAttachTo() == self.name and module.frame and module.frame[unit]) then
-				local attachedPoint = module.frame[unit]:GetPoint()
-				if (strfind(Gladius.db.classIconRelativePoint, "LEFT") and (not attachedPoint or (attachedPoint and strfind(attachedPoint, "RIGHT")))) then
-					left = left - module.frame[unit]:GetWidth()
-				elseif (strfind(Gladius.db.classIconRelativePoint, "LEFT") and (not attachedPoint or (attachedPoint and strfind(attachedPoint, "LEFT")))) then
-					right = right - module.frame[unit]:GetWidth()
-				end
-			end
-		end]]
 		-- top / bottom
 		if unitFrame:GetHeight() > Gladius.buttons[unit]:GetHeight() then
-			bottom = -(unitFrame:GetHeight() - Gladius.buttons[unit]:GetHeight()) + Gladius.db.classIconOffsetY
+			hitBottom = -(unitFrame:GetHeight() - Gladius.buttons[unit]:GetHeight()) + Gladius.db.classIconOffsetY
 		end
-		Gladius.buttons[unit]:SetHitRectInsets(left, right, 0, 0)
-		Gladius.buttons[unit].secure:SetHitRectInsets(left, right, 0, 0)
+		Gladius.buttons[unit]:SetHitRectInsets(hitLeft, hitRight, 0, 0)
+		Gladius.buttons[unit].secure:SetHitRectInsets(hitLeft, hitRight, 0, 0)
 	end
 	-- style action button
 	unitFrame.normalTexture:SetHeight(unitFrame:GetHeight() + unitFrame:GetHeight() * 0.4)
@@ -636,7 +640,7 @@ function ClassIcon:Update(unit)
 	unitFrame.texture:SetPoint("TOPLEFT", unitFrame, "TOPLEFT")
 	unitFrame.texture:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT")
 	unitFrame.normalTexture:SetVertexColor(Gladius.db.classIconGlossColor.r, Gladius.db.classIconGlossColor.g, Gladius.db.classIconGlossColor.b, Gladius.db.classIconGloss and Gladius.db.classIconGlossColor.a or 0)
-	unitFrame.texture:SetTexCoord(left, right, top, bottom)
+	unitFrame.texture:SetTexCoord(0, 1, 0, 1)
 
 	-- cooldown
 	unitFrame.cooldown.isDisabled = not Gladius.db.classIconCooldown
@@ -654,24 +658,43 @@ function ClassIcon:Show(unit)
 	-- set class icon (UpdateAura disabled - UnitAura returns secret data for arena units in 12.0)
 	self:SetClassIcon(unit)
 	-- Hook Blizzard's DebuffFrame for CC display on class icon
-	self:HookBlizzDebuffs(unit)
+	-- On reload, Blizzard frames are recreated but our hook flags persist.
+	-- Validate that the hooked frame still exists; if not, reset the flag.
+	local id = tonumber(unit:match("arena(%d)"))
+	if id and self.hookedBlizzDebuffs[id] then
+		local blizzFrame = _G["CompactArenaFrameMember" .. id]
+		if not blizzFrame or not blizzFrame.DebuffFrame then
+			self.hookedBlizzDebuffs[id] = nil
+		end
+	end
+	-- Retry with delay if Blizzard frame isn't available yet
+	if not self:HookBlizzDebuffs(unit) then
+		C_Timer.After(0.5, function()
+			if not self:HookBlizzDebuffs(unit) then
+				C_Timer.After(1.5, function()
+					self:HookBlizzDebuffs(unit)
+				end)
+			end
+		end)
+	end
 end
 
 function ClassIcon:HookBlizzDebuffs(unit)
 	local id = tonumber(unit:match("arena(%d)"))
-	if not id or self.hookedBlizzDebuffs[id] then return end
+	if not id then return false end
+	if self.hookedBlizzDebuffs[id] then return true end
 
 	local blizzFrame = _G["CompactArenaFrameMember" .. id]
-	if not blizzFrame then return end
+	if not blizzFrame then return false end
 
 	local debuffFrame = blizzFrame.DebuffFrame
-	if not debuffFrame then return end
+	if not debuffFrame then return false end
 
 	self.hookedBlizzDebuffs[id] = true
-	local unitFrame = self.frame[unit]
 	local classIcon = self
 
 	hooksecurefunc(debuffFrame.Icon, "SetTexture", function(_, tex)
+		local unitFrame = classIcon.frame[unit]
 		if not unitFrame then return end
 		if tex and tex ~= "INTERFACE\\ICONS\\INV_MISC_QUESTIONMARK.BLP" then
 			unitFrame.texture:SetTexture(tex)
@@ -682,9 +705,12 @@ function ClassIcon:HookBlizzDebuffs(unit)
 	end)
 
 	hooksecurefunc(debuffFrame.Cooldown, "SetCooldown", function(_, start, duration)
+		local unitFrame = classIcon.frame[unit]
 		if not unitFrame or not unitFrame.cooldown then return end
 		unitFrame.cooldown:SetCooldown(start, duration)
 	end)
+
+	return true
 end
 
 function ClassIcon:Reset(unit)
