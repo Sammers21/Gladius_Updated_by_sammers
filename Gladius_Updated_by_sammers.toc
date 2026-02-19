@@ -25,7 +25,6 @@ Modules\ClassIcon.lua
 Modules\Trinket.lua
 Modules\Highlight.lua
 Modules\Clicks.lua
-Modules\Tags.lua
 Modules\DRTracker.lua
 Modules\Layout.lua
 Modules\Interrupt.lua

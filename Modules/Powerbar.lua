@@ -1,4 +1,4 @@
-﻿local Gladius = _G.Gladius
+local Gladius = _G.Gladius
 if not Gladius then
 	DEFAULT_CHAT_FRAME:AddMessage(format("Module %s requires Gladius", "Power Bar"))
 end
@@ -15,6 +15,8 @@ local UnitExists = UnitExists
 local UnitPower = UnitPower
 local UnitPowerMax = UnitPowerMax
 local UnitPowerType = UnitPowerType
+local UnitClass = UnitClass
+local LOCALIZED_CLASS_NAMES_MALE = LOCALIZED_CLASS_NAMES_MALE
 
 local PowerBar = Gladius:NewModule("PowerBar", true, true, {
 	powerBarAttachTo = "HealthBar",
@@ -128,11 +130,12 @@ function PowerBar:UpdatePower(unit, power, maxPower, powerType)
 		local color = self:GetBarColor(powerType)
 		self.frame[unit]:SetStatusBarColor(color.r, color.g, color.b)
 	end
+	self:UpdateSpecClassText(unit)
 end
 
 function PowerBar:UpdateColors(unit)
 	local powerType
-	if not Gladius.testing then
+	if not Gladius.test then
 		powerType = UnitPowerType(unit)
 	else
 		powerType = Gladius.testing[unit].powerType
@@ -156,6 +159,49 @@ function PowerBar:CreateBar(unit)
 	self.frame[unit] = CreateFrame("STATUSBAR", "Gladius"..self.name..unit, button)
 	self.frame[unit].background = self.frame[unit]:CreateTexture("Gladius"..self.name..unit.."Background", "BACKGROUND")
 	self.frame[unit].highlight = self.frame[unit]:CreateTexture("Gladius"..self.name.."Highlight"..unit, "OVERLAY")
+	self.frame[unit].specClassText = self.frame[unit]:CreateFontString("Gladius"..self.name..unit.."SpecClassText", "OVERLAY")
+end
+
+function PowerBar:UpdateSpecClassText(unit)
+	local frame = self.frame[unit]
+	if not frame or not frame.specClassText then
+		return
+	end
+	local text = ""
+	if Gladius.test then
+		local spec = Gladius.testing[unit] and Gladius.testing[unit].unitSpec
+		local classToken = Gladius.testing[unit] and Gladius.testing[unit].unitClass
+		local classText = classToken and (LOCALIZED_CLASS_NAMES_MALE[classToken] or classToken) or ""
+		if spec and spec ~= "" and classText ~= "" then
+			text = spec .. " " .. classText
+		elseif spec and spec ~= "" then
+			text = spec
+		else
+			text = classText
+		end
+	else
+		local unitFrame = Gladius.buttons and Gladius.buttons[unit]
+		local spec = unitFrame and unitFrame.spec or ""
+		local classToken = unitFrame and unitFrame.class or ""
+		if classToken == "" then
+			local _, fallbackClass = UnitClass(unit)
+			if fallbackClass then
+				classToken = fallbackClass
+				if unitFrame then
+					unitFrame.class = fallbackClass
+				end
+			end
+		end
+		local classText = classToken ~= "" and (LOCALIZED_CLASS_NAMES_MALE[classToken] or classToken) or ""
+		if spec ~= "" and classText ~= "" then
+			text = spec .. " " .. classText
+		elseif spec ~= "" then
+			text = spec
+		else
+			text = classText
+		end
+	end
+	frame.specClassText:SetText(text or "")
 end
 
 function PowerBar:Update(unit)
@@ -168,7 +214,7 @@ function PowerBar:Update(unit)
 	end
 	-- get unit powerType
 	local powerType
-	if not Gladius.testing then
+	if not Gladius.test then
     powerType = UnitPowerType(unit) or self:GetUnitPowerTypeFallback(unit)
 	else
 		powerType = Gladius.testing[unit].powerType
@@ -227,6 +273,19 @@ function PowerBar:Update(unit)
 	self.frame[unit].highlight:SetBlendMode("ADD")
 	self.frame[unit].highlight:SetVertexColor(1.0, 1.0, 1.0, 1.0)
 	self.frame[unit].highlight:SetAlpha(0)
+
+	-- spec/class text (replaces old tag text on powerbar)
+	local fontSize = Gladius.db.useGlobalFontSize and Gladius.db.globalFontSize or 11
+	local fontPath = LSM:Fetch(LSM.MediaType.FONT, Gladius.db.globalFont)
+	self.frame[unit].specClassText:ClearAllPoints()
+	self.frame[unit].specClassText:SetPoint("LEFT", self.frame[unit], "LEFT", 2, 0)
+	self.frame[unit].specClassText:SetJustifyH("LEFT")
+	self.frame[unit].specClassText:SetJustifyV("MIDDLE")
+	self.frame[unit].specClassText:SetFont(fontPath, fontSize)
+	self.frame[unit].specClassText:SetTextColor(1, 1, 1, 1)
+	self.frame[unit].specClassText:SetShadowOffset(1, -1)
+	self.frame[unit].specClassText:SetShadowColor(0, 0, 0, 1)
+	self:UpdateSpecClassText(unit)
 	-- hide frame
 	self.frame[unit]:SetAlpha(0)
 end
@@ -247,9 +306,20 @@ function PowerBar:GetBarColor(powerType)
 end
 
 function PowerBar:GetUnitPowerTypeFallback(unit)
-    local spec = Gladius.buttons[unit].spec
-    local class = Gladius.buttons[unit].class
-    return powerTypeFallback[spec] or powerTypeFallback[class]
+	local button = Gladius.buttons and Gladius.buttons[unit]
+	if not button then
+		return nil
+	end
+	local spec = button.spec
+	local class = button.class
+	if not class or class == "" then
+		local _, fallbackClass = UnitClass(unit)
+		if fallbackClass then
+			class = fallbackClass
+			button.class = fallbackClass
+		end
+	end
+	return powerTypeFallback[spec] or powerTypeFallback[class]
 end
 
 function PowerBar:Show(unit)
@@ -269,6 +339,7 @@ function PowerBar:Show(unit)
     if not Gladius.test then
         self:UNIT_POWER_UPDATE("UNIT_POWER_UPDATE", unit)
     end
+	self:UpdateSpecClassText(unit)
 end
 
 function PowerBar:Reset(unit)
@@ -285,6 +356,9 @@ function PowerBar:Reset(unit)
         end
     end
     self.frame[unit]:SetValue(1)
+	if self.frame[unit].specClassText then
+		self.frame[unit].specClassText:SetText("")
+	end
     -- hide
     self.frame[unit]:SetAlpha(0)
 end

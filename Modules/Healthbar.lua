@@ -9,14 +9,19 @@ local LSM
 local pairs = pairs
 local select = select
 local strfind = string.find
+local floor = math.floor
+local strformat = string.format
 
 local CreateFrame = CreateFrame
 local UnitClass = UnitClass
 local UnitExists = UnitExists
 local UnitHealth = UnitHealth
 local UnitHealthMax = UnitHealthMax
+local UnitName = UnitName
+local UnitHealthPercent = UnitHealthPercent
 
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
+local LOCALIZED_CLASS_NAMES_MALE = LOCALIZED_CLASS_NAMES_MALE
 
 local HealthBar = Gladius:NewModule("HealthBar", true, true, {
 	healthBarAttachTo = "Frame",
@@ -116,6 +121,7 @@ function HealthBar:UpdateHealth(unit, health, maxHealth)
 	-- In 12.0, health values are secret for arena units; SetValue accepts secrets
 	-- Inverse bar not supported (arithmetic on secrets crashes)
 	self.frame[unit]:SetValue(health)
+	self:UpdateInfoText(unit)
 end
 
 function HealthBar:UpdateColors(unit)
@@ -147,6 +153,78 @@ function HealthBar:CreateBar(unit)
 	self.frame[unit] = CreateFrame("STATUSBAR", "Gladius"..self.name..unit, button)
 	self.frame[unit].background = self.frame[unit]:CreateTexture("Gladius"..self.name..unit.."Background", "BACKGROUND")
 	self.frame[unit].highlight = self.frame[unit]:CreateTexture("Gladius"..self.name.."Highlight"..unit, "OVERLAY")
+	self.frame[unit].nameText = self.frame[unit]:CreateFontString("Gladius"..self.name..unit.."NameText", "OVERLAY")
+	self.frame[unit].healthPctText = self.frame[unit]:CreateFontString("Gladius"..self.name..unit.."HealthPctText", "OVERLAY")
+end
+
+function HealthBar:UpdateInfoText(unit)
+	local bar = self.frame[unit]
+	if not bar or not bar.nameText or not bar.healthPctText then
+		return
+	end
+
+	-- Name text on the health bar should show player nickname.
+	local name = ""
+	if Gladius.test then
+		name = unit
+		bar.nameText:SetText(name or "")
+	else
+		local okSetName = pcall(function()
+			bar.nameText:SetText(UnitName(unit))
+		end)
+		if not okSetName then
+			local setFromCaptured = false
+			if Gladius.GetCapturedArenaName then
+				local capturedName, hasCapturedName = Gladius:GetCapturedArenaName(unit)
+				if hasCapturedName then
+					setFromCaptured = pcall(bar.nameText.SetText, bar.nameText, capturedName)
+				end
+			end
+			if not setFromCaptured then
+				bar.nameText:SetText("")
+			end
+		end
+	end
+
+	-- HP percent text: SetFormattedText accepts secret values in arena.
+	local pctText = ""
+	if Gladius.test then
+		local h = Gladius.testing[unit] and Gladius.testing[unit].health or 0
+		local m = Gladius.testing[unit] and Gladius.testing[unit].maxHealth or 0
+		if m > 0 then
+			pctText = tostring(floor((h / m) * 100 + 0.5)) .. "%"
+		end
+		bar.healthPctText:SetText(pctText)
+	else
+		-- Default to 100% while live health data is still uninitialized.
+		local okDefault, shouldDefault = pcall(function()
+			local _, maxValue = bar:GetMinMaxValues()
+			return maxValue and maxValue <= 1
+		end)
+		if okDefault and shouldDefault then
+			bar.healthPctText:SetText("100%")
+			return
+		end
+
+		local okPct = pcall(function()
+			bar.healthPctText:SetFormattedText("%0.f%%", UnitHealthPercent(unit, nil, CurveConstants and CurveConstants.ScaleTo100))
+		end)
+		if not okPct then
+			local okBar, barPct = pcall(function()
+				local value = bar:GetValue()
+				local _, maxValue = bar:GetMinMaxValues()
+				if value and maxValue and maxValue > 0 then
+					return floor((value / maxValue) * 100 + 0.5)
+				end
+				return nil
+			end)
+			if okBar and barPct ~= nil then
+				bar.healthPctText:SetText(strformat("%d%%", barPct))
+			else
+				bar.healthPctText:SetText("")
+			end
+		end
+	end
 end
 
 function HealthBar:Update(unit)
@@ -203,6 +281,28 @@ function HealthBar:Update(unit)
 	self.frame[unit].highlight:SetBlendMode("ADD")
 	self.frame[unit].highlight:SetVertexColor(1.0, 1.0, 1.0, 1.0)
 	self.frame[unit].highlight:SetAlpha(0)
+
+	-- name + hp% text (replaces former Tags module defaults)
+	local fontSize = Gladius.db.useGlobalFontSize and Gladius.db.globalFontSize or 11
+	local fontPath = LSM:Fetch(LSM.MediaType.FONT, Gladius.db.globalFont)
+	self.frame[unit].nameText:ClearAllPoints()
+	self.frame[unit].nameText:SetPoint("LEFT", self.frame[unit], "LEFT", 2, 0)
+	self.frame[unit].nameText:SetJustifyH("LEFT")
+	self.frame[unit].nameText:SetJustifyV("MIDDLE")
+	self.frame[unit].nameText:SetFont(fontPath, fontSize)
+	self.frame[unit].nameText:SetTextColor(1, 1, 1, 1)
+	self.frame[unit].nameText:SetShadowOffset(1, -1)
+	self.frame[unit].nameText:SetShadowColor(0, 0, 0, 1)
+
+	self.frame[unit].healthPctText:ClearAllPoints()
+	self.frame[unit].healthPctText:SetPoint("RIGHT", self.frame[unit], "RIGHT", -2, 0)
+	self.frame[unit].healthPctText:SetJustifyH("RIGHT")
+	self.frame[unit].healthPctText:SetJustifyV("MIDDLE")
+	self.frame[unit].healthPctText:SetFont(fontPath, fontSize)
+	self.frame[unit].healthPctText:SetTextColor(1, 1, 1, 1)
+	self.frame[unit].healthPctText:SetShadowOffset(1, -1)
+	self.frame[unit].healthPctText:SetShadowColor(0, 0, 0, 1)
+	self:UpdateInfoText(unit)
 	-- hide frame
 	self.frame[unit]:SetAlpha(0)
 end
@@ -266,6 +366,8 @@ function HealthBar:Show(unit)
 	-- call event
 	if not Gladius.test then
 		self:UNIT_HEALTH("UNIT_HEALTH", unit)
+	else
+		self:UpdateInfoText(unit)
 	end
 end
 
@@ -276,6 +378,12 @@ function HealthBar:Reset(unit)
 	-- reset bar
 	self.frame[unit]:SetMinMaxValues(0, 1)
 	self.frame[unit]:SetValue(1)
+	if self.frame[unit].nameText then
+		self.frame[unit].nameText:SetText("")
+	end
+	if self.frame[unit].healthPctText then
+		self.frame[unit].healthPctText:SetText("")
+	end
 	-- hide
 	self.frame[unit]:SetAlpha(0)
 end
@@ -285,6 +393,7 @@ function HealthBar:Test(unit)
 	local maxHealth = Gladius.testing[unit].maxHealth
 	local health = Gladius.testing[unit].health
 	self:UpdateHealth(unit, health, maxHealth)
+	self:UpdateInfoText(unit)
 end
 
 function HealthBar:GetOptions()

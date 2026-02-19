@@ -1,4 +1,4 @@
-﻿local abs = abs
+local abs = abs
 local math = math
 local max = max
 local pairs = pairs
@@ -26,7 +26,6 @@ local UnitAura = UnitAura
 local UnitCastingInfo = UnitCastingInfo
 local UnitIsDeadOrGhost = UnitIsDeadOrGhost
 local ReloadUI = ReloadUI
-local StaticPopup_Show = StaticPopup_Show
 
 local UIParent = UIParent
 
@@ -34,21 +33,8 @@ Gladius = { }
 Gladius.eventHandler = CreateFrame("Frame")
 Gladius.eventHandler.events = { }
 Gladius.eventHandler.pendingEvents = { }
-
-if not StaticPopupDialogs["GLADIUS_MIDNIGHT_RELOAD"] then
-	StaticPopupDialogs["GLADIUS_MIDNIGHT_RELOAD"] = {
-		text = "Because of Midnight UI changes you need to reload so everything works properly.",
-		button1 = "Reload UI",
-		button2 = "Close",
-		OnAccept = function()
-			ReloadUI()
-		end,
-		timeout = 0,
-		whileDead = 1,
-		hideOnEscape = 1,
-		preferredIndex = 3,
-	}
-end
+Gladius.midnightBeenInArena = false
+Gladius.midnightReloadWarningShown = false
 
 Gladius.eventHandler:RegisterEvent("PLAYER_LOGIN")
 Gladius.eventHandler:RegisterEvent("ADDON_LOADED")
@@ -69,6 +55,15 @@ Gladius.eventHandler:SetScript("OnEvent", function(self, event, ...)
 	end
 	if event == "PLAYER_LOGIN" then
 		Gladius:OnInitialize()
+		-- Mirror sArena behavior:
+		-- - login outside arena: first arena entry should show warning
+		-- - login inside arena (reconnect): do not show in that arena
+		local _, loginInstanceType = IsInInstance()
+		if loginInstanceType ~= "arena" then
+			C_Timer.After(3, function()
+				Gladius.midnightBeenInArena = true
+			end)
+		end
 		-- Defer OnEnable to avoid protected state issues in 12.0+
 		C_Timer.After(0, function()
 			Gladius:OnEnable()
@@ -344,6 +339,8 @@ function Gladius:OnInitialize()
 		end
 		rawset(t, index, value)
 	end})
+	-- Legacy key from old reload-warning behavior; no longer used.
+	self.db.midnightReloadShown = nil
 
 	-- localization
 	L = self.L
@@ -499,39 +496,97 @@ function Gladius:JoinedArena()
 	if not self.hookedBlizzData then
 		self.hookedBlizzData = {}
 	end
-	for i = 1, 5 do
-		local unit = "arena" .. i
-		if not self.hookedBlizzData[i] then
-			local blizzFrame = _G["CompactArenaFrameMember" .. i]
-			if blizzFrame then
-				self.hookedBlizzData[i] = true
-				-- Hook name text
-				if blizzFrame.name and blizzFrame.name.SetText then
-					hooksecurefunc(blizzFrame.name, "SetText", function(_, text)
-						local button = self.buttons[unit]
-						if button and button.secretNameSink then
-							button.secretNameSink:SetText(text or "")
-						end
-					end)
+	local function tryHookBlizzData(id)
+		if self.hookedBlizzData[id] then
+			return true
+		end
+		local unit = "arena" .. id
+		local blizzFrame = _G["CompactArenaFrameMember" .. id]
+		if not blizzFrame then
+			return false
+		end
+
+		self.hookedBlizzData[id] = true
+		-- Hook name text
+		if blizzFrame.name and blizzFrame.name.SetText then
+			hooksecurefunc(blizzFrame.name, "SetText", function(_, text)
+				local button = self.buttons[unit]
+				if button and button.secretNameSink then
+					pcall(button.secretNameSink.SetText, button.secretNameSink, text)
+					if self.modules and self.modules["HealthBar"] and self.modules["HealthBar"].UpdateInfoText then
+						self.modules["HealthBar"]:UpdateInfoText(unit)
+					end
 				end
-				-- Hook health bar value
-				if blizzFrame.healthBar and blizzFrame.healthBar.SetValue then
-					hooksecurefunc(blizzFrame.healthBar, "SetValue", function(_, value)
-						local button = self.buttons[unit]
-						if button and button.secretHealthSink and value ~= nil then
-							button.secretHealthSink:SetValue(value)
-						end
-					end)
-				end
-				if blizzFrame.healthBar and blizzFrame.healthBar.SetMinMaxValues then
-					hooksecurefunc(blizzFrame.healthBar, "SetMinMaxValues", function(_, minVal, maxVal)
-						local button = self.buttons[unit]
-						if button and button.secretHealthSink then
-							button.secretHealthSink:SetMinMaxValues(minVal or 0, maxVal or 0)
-						end
-					end)
+			end)
+			-- Capture current value immediately too.
+			local ok, currentName = pcall(blizzFrame.name.GetText, blizzFrame.name)
+			if ok then
+				local button = self.buttons[unit]
+				if button and button.secretNameSink then
+					pcall(button.secretNameSink.SetText, button.secretNameSink, currentName)
+					if self.modules and self.modules["HealthBar"] and self.modules["HealthBar"].UpdateInfoText then
+						self.modules["HealthBar"]:UpdateInfoText(unit)
+					end
 				end
 			end
+		end
+		-- Hook health bar value
+		if blizzFrame.healthBar and blizzFrame.healthBar.SetValue then
+			hooksecurefunc(blizzFrame.healthBar, "SetValue", function(_, value)
+				local button = self.buttons[unit]
+				if button and button.secretHealthSink then
+					pcall(button.secretHealthSink.SetValue, button.secretHealthSink, value)
+					if self.modules and self.modules["HealthBar"] and self.modules["HealthBar"].UpdateInfoText then
+						self.modules["HealthBar"]:UpdateInfoText(unit)
+					end
+				end
+			end)
+			local ok, currentValue = pcall(blizzFrame.healthBar.GetValue, blizzFrame.healthBar)
+			if ok then
+				local button = self.buttons[unit]
+				if button and button.secretHealthSink then
+					pcall(button.secretHealthSink.SetValue, button.secretHealthSink, currentValue)
+					if self.modules and self.modules["HealthBar"] and self.modules["HealthBar"].UpdateInfoText then
+						self.modules["HealthBar"]:UpdateInfoText(unit)
+					end
+				end
+			end
+		end
+		if blizzFrame.healthBar and blizzFrame.healthBar.SetMinMaxValues then
+			hooksecurefunc(blizzFrame.healthBar, "SetMinMaxValues", function(_, minVal, maxVal)
+				local button = self.buttons[unit]
+				if button and button.secretHealthSink then
+					pcall(button.secretHealthSink.SetMinMaxValues, button.secretHealthSink, minVal, maxVal)
+					if self.modules and self.modules["HealthBar"] and self.modules["HealthBar"].UpdateInfoText then
+						self.modules["HealthBar"]:UpdateInfoText(unit)
+					end
+				end
+			end)
+			local ok, minVal, maxVal = pcall(blizzFrame.healthBar.GetMinMaxValues, blizzFrame.healthBar)
+			if ok then
+				local button = self.buttons[unit]
+				if button and button.secretHealthSink then
+					pcall(button.secretHealthSink.SetMinMaxValues, button.secretHealthSink, minVal, maxVal)
+					if self.modules and self.modules["HealthBar"] and self.modules["HealthBar"].UpdateInfoText then
+						self.modules["HealthBar"]:UpdateInfoText(unit)
+					end
+				end
+			end
+		end
+
+		return true
+	end
+
+	for i = 1, 5 do
+		local id = i
+		if not tryHookBlizzData(id) then
+			C_Timer.After(0.5, function()
+				if not tryHookBlizzData(id) then
+					C_Timer.After(1.5, function()
+						tryHookBlizzData(id)
+					end)
+				end
+			end)
 		end
 	end
 
@@ -562,7 +617,12 @@ function Gladius:JoinedArena()
 		self:ARENA_PREP_OPPONENT_SPECIALIZATIONS()
 	end
 
-	self:ShowMidnightReloadWarning()
+	-- Show warning only once, matching sArena's first-arena-entry behavior.
+	if self.midnightBeenInArena then
+		self:ShowMidnightReloadWarning()
+	else
+		self.midnightBeenInArena = true
+	end
 end
 
 function Gladius:LeftArena()
@@ -581,14 +641,108 @@ function Gladius:LeftArena()
 end
 
 function Gladius:ShowMidnightReloadWarning()
-	-- Only show once per profile (persists across sessions via SavedVariables)
-	if self.db.midnightReloadShown then
+	-- Session-local one-time warning (same practical behavior as sArena).
+	if self.midnightReloadWarningShown then
 		return
 	end
-	self.db.midnightReloadShown = true
-	C_Timer.After(0.1, function()
-		StaticPopup_Show("GLADIUS_MIDNIGHT_RELOAD")
-	end)
+	self.midnightReloadWarningShown = true
+
+	if self.midnightReloadWarningFrame then
+		self.midnightReloadWarningFrame:SetAlpha(0)
+		self.midnightReloadWarningFrame:Show()
+	else
+		local template = BackdropTemplateMixin and "BackdropTemplate" or nil
+		local frame = CreateFrame("Frame", "GladiusMidnightReloadWarning", UIParent, template)
+		frame:SetSize(460, 250)
+		frame:SetPoint("CENTER", UIParent, "CENTER", 0, 140)
+		frame:SetFrameStrata("DIALOG")
+		frame:EnableMouse(true)
+		frame:SetMovable(true)
+		frame:RegisterForDrag("LeftButton")
+		frame:SetScript("OnDragStart", function(f) f:StartMoving() end)
+		frame:SetScript("OnDragStop", function(f) f:StopMovingOrSizing() end)
+
+		frame:SetBackdrop({
+			bgFile = "Interface\\Buttons\\WHITE8x8",
+			edgeFile = "Interface\\Buttons\\WHITE8x8",
+			edgeSize = 1,
+			insets = {left = 1, right = 1, top = 1, bottom = 1},
+		})
+		frame:SetBackdropColor(0.04, 0.05, 0.09, 0.96)
+		frame:SetBackdropBorderColor(0.22, 0.75, 0.82, 0.55)
+
+		local stripe = frame:CreateTexture(nil, "ARTWORK")
+		stripe:SetTexture("Interface\\Buttons\\WHITE8x8")
+		stripe:SetPoint("TOPLEFT", 1, -1)
+		stripe:SetPoint("TOPRIGHT", -1, -1)
+		stripe:SetHeight(3)
+		stripe:SetVertexColor(0.20, 0.82, 0.90, 1)
+
+		local icon = frame:CreateTexture(nil, "OVERLAY")
+		icon:SetTexture("Interface\\DialogFrame\\DialogAlertIcon")
+		icon:SetSize(44, 44)
+		icon:SetPoint("TOP", 0, -14)
+
+		local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		title:SetPoint("TOP", icon, "BOTTOM", 0, -8)
+		title:SetText("|cff40d0e0Gladius: Reload Recommended|r")
+
+		local body = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		body:SetPoint("TOP", title, "BOTTOM", 0, -12)
+		body:SetWidth(410)
+		body:SetJustifyH("CENTER")
+		body:SetText("Midnight (12.x) UI restrictions can cause arena data\n" ..
+			"to behave inconsistently on first load.\n\n" ..
+			"|cff88a0b0Reload UI once now for the most stable behavior.|r")
+
+		local reloadButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		reloadButton:SetSize(160, 30)
+		reloadButton:SetPoint("BOTTOM", 0, 34)
+		reloadButton:SetText("Reload UI")
+		reloadButton:SetScript("OnClick", function()
+			ReloadUI()
+		end)
+
+		local dismissText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		dismissText:SetPoint("TOP", reloadButton, "BOTTOM", 0, -4)
+		dismissText:SetText("|cff555566dismiss|r")
+
+		local dismissButton = CreateFrame("Button", nil, frame)
+		dismissButton:SetPoint("TOPLEFT", dismissText, "TOPLEFT", -6, 2)
+		dismissButton:SetPoint("BOTTOMRIGHT", dismissText, "BOTTOMRIGHT", 6, -2)
+		dismissButton:SetScript("OnClick", function()
+			frame:Hide()
+		end)
+		dismissButton:SetScript("OnEnter", function()
+			dismissText:SetText("|cff8899aadismiss|r")
+		end)
+		dismissButton:SetScript("OnLeave", function()
+			dismissText:SetText("|cff555566dismiss|r")
+		end)
+
+		local animationGroup = frame:CreateAnimationGroup()
+		local fade = animationGroup:CreateAnimation("Alpha")
+		fade:SetFromAlpha(0)
+		fade:SetToAlpha(1)
+		fade:SetDuration(0.4)
+		fade:SetSmoothing("OUT")
+		animationGroup:SetScript("OnFinished", function()
+			frame:SetAlpha(1)
+		end)
+		frame._fadeIn = animationGroup
+
+		self.midnightReloadWarningFrame = frame
+	end
+
+	local warningFrame = self.midnightReloadWarningFrame
+	if warningFrame then
+		warningFrame:Show()
+		if warningFrame._fadeIn then
+			warningFrame._fadeIn:Stop()
+			warningFrame:SetAlpha(0)
+			warningFrame._fadeIn:Play()
+		end
+	end
 end
 
 function Gladius:UNIT_NAME_UPDATE(event, unit)
@@ -621,6 +775,11 @@ function Gladius:ARENA_OPPONENT_UPDATE(event, unit, type)
 		self.buttons[unit].spec = name
 		self.buttons[unit].specIcon = icon
 		self.buttons[unit].class = class
+	else
+		local _, class = UnitClass(unit)
+		if class then
+			self.buttons[unit].class = class
+		end
 	end
 	self:UpdateUnit(unit)
 	self:ShowUnit(unit)
@@ -653,6 +812,12 @@ function Gladius:ARENA_PREP_OPPONENT_SPECIALIZATIONS()
 			self.buttons[unit].spec = name
 			self.buttons[unit].specIcon = icon
 			self.buttons[unit].class = class
+			if not class then
+				local _, fallbackClass = UnitClass(unit)
+				if fallbackClass then
+					self.buttons[unit].class = fallbackClass
+				end
+			end
 			self:UpdateUnit(unit)
 			self:ShowUnit(unit)
 			self:UpdateAlpha(unit, 0.5)
@@ -984,33 +1149,42 @@ function Gladius:GetCapturedArenaName(unit)
 	local button = self.buttons and self.buttons[unit]
 	if button and button.secretNameSink then
 		local ok, name = pcall(button.secretNameSink.GetText, button.secretNameSink)
-		if ok and name and name ~= "" then
-			return name
+		if ok then
+			local valueType = type(name)
+			if valueType == "string" then
+				return name, true
+			end
 		end
 	end
-	return nil
+	return nil, false
 end
 
 function Gladius:GetCapturedArenaHealth(unit)
 	local button = self.buttons and self.buttons[unit]
 	if button and button.secretHealthSink then
 		local ok, value = pcall(button.secretHealthSink.GetValue, button.secretHealthSink)
-		if ok and value ~= nil then
-			return value
+		if ok then
+			local valueType = type(value)
+			if valueType == "number" then
+				return value, true
+			end
 		end
 	end
-	return nil
+	return nil, false
 end
 
 function Gladius:GetCapturedArenaMaxHealth(unit)
 	local button = self.buttons and self.buttons[unit]
 	if button and button.secretHealthSink then
 		local ok, _, maxValue = pcall(button.secretHealthSink.GetMinMaxValues, button.secretHealthSink)
-		if ok and maxValue ~= nil then
-			return maxValue
+		if ok then
+			local valueType = type(maxValue)
+			if valueType == "number" then
+				return maxValue, true
+			end
 		end
 	end
-	return nil
+	return nil, false
 end
 
 function Gladius:CreateButton(unit)
@@ -1049,7 +1223,7 @@ function Gladius:CreateButton(unit)
 	secure:RegisterForClicks("AnyUp", "AnyDown")
 	button.secure = secure
 	-- Secret-value sinks for Midnight arena data.
-	button.secretNameSink = button:CreateFontString(nil, "OVERLAY")
+	button.secretNameSink = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	button.secretNameSink:Hide()
 	button.secretHealthSink = CreateFrame("StatusBar", nil, button)
 	button.secretHealthSink:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")

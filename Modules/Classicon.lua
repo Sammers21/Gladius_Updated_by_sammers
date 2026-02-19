@@ -1,4 +1,4 @@
-﻿local Gladius = _G.Gladius
+local Gladius = _G.Gladius
 if not Gladius then
 	DEFAULT_CHAT_FRAME:AddMessage(format("Module %s requires Gladius", "Class Icon"))
 end
@@ -13,6 +13,8 @@ local strfind = string.find
 local tonumber = tonumber
 local tostring = tostring
 local unpack = unpack
+local mathfloor = math.floor
+local mathmax = math.max
 
 local CreateFrame = CreateFrame
 local GetArenaOpponentSpec = GetArenaOpponentSpec
@@ -39,6 +41,36 @@ local SafeGetSpellInfo = function(spellID)
 		if name then return name end
 	end
 	return nil
+end
+
+local function ApplyCooldownTextStyle(cooldown, iconHeight, ownerFrame)
+	if not cooldown then return end
+	if ownerFrame then
+		cooldown:ClearAllPoints()
+		cooldown:SetAllPoints(ownerFrame)
+	end
+	local fontPath = "Fonts\\FRIZQT__.TTF"
+	if LSM and Gladius and Gladius.db and Gladius.db.globalFont then
+		fontPath = LSM:Fetch(LSM.MediaType.FONT, Gladius.db.globalFont) or fontPath
+	end
+	local fontSize = mathmax(12, mathfloor((iconHeight or 40) * 0.46))
+
+	-- Blizzard/third-party cooldown text can be exposed as Text and/or generic regions.
+	if cooldown.Text and cooldown.Text.SetFont then
+		cooldown.Text:SetFont(fontPath, fontSize, "OUTLINE")
+		cooldown.Text:SetJustifyH("CENTER")
+		cooldown.Text:SetJustifyV("MIDDLE")
+	end
+
+	local n = select("#", cooldown:GetRegions())
+	for i = 1, n do
+		local region = select(i, cooldown:GetRegions())
+		if region and region.GetObjectType and region:GetObjectType() == "FontString" and region.SetFont then
+			region:SetFont(fontPath, fontSize, "OUTLINE")
+			region:SetJustifyH("CENTER")
+			region:SetJustifyV("MIDDLE")
+		end
+	end
 end
 
 local function GetDefaultAuraList()
@@ -514,6 +546,14 @@ function ClassIcon:SetClassIcon(unit)
 				end
 			end
 		end
+		-- Last fallback: use UnitClass when spec API is unavailable.
+		if not class then
+			local _, fallbackClass = UnitClass(unit)
+			if fallbackClass then
+				class = fallbackClass
+				frame.class = fallbackClass
+			end
+		end
 	else
 		class = Gladius.testing[unit].unitClass
 		local _, _, _, icon = GetSpecializationInfoByID(Gladius.testing[unit].unitSpecId)
@@ -645,6 +685,7 @@ function ClassIcon:Update(unit)
 	-- cooldown
 	unitFrame.cooldown.isDisabled = not Gladius.db.classIconCooldown
 	unitFrame.cooldown:SetReverse(Gladius.db.classIconCooldownReverse)
+	ApplyCooldownTextStyle(unitFrame.cooldown, unitFrame:GetHeight(), unitFrame)
 	Gladius:Call(Gladius.modules.Timer, "RegisterTimer", unitFrame, Gladius.db.classIconCooldown)
 
 	-- hide
@@ -707,8 +748,13 @@ function ClassIcon:HookBlizzDebuffs(unit)
 	hooksecurefunc(debuffFrame.Cooldown, "SetCooldown", function(_, start, duration)
 		local unitFrame = classIcon.frame[unit]
 		if not unitFrame or not unitFrame.cooldown then return end
+		ApplyCooldownTextStyle(unitFrame.cooldown, unitFrame:GetHeight(), unitFrame)
 		unitFrame.cooldown:SetCooldown(start, duration)
 	end)
+
+	-- Keep Blizzard debuff cooldown text/size consistent too (if it remains visible).
+	local sourceHeight = debuffFrame.Icon and debuffFrame.Icon:GetHeight() or debuffFrame:GetHeight()
+	ApplyCooldownTextStyle(debuffFrame.Cooldown, sourceHeight, debuffFrame.Icon or debuffFrame)
 
 	return true
 end

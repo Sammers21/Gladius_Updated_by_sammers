@@ -1,4 +1,4 @@
-﻿local Gladius = _G.Gladius
+local Gladius = _G.Gladius
 if not Gladius then
 	DEFAULT_CHAT_FRAME:AddMessage(format("Module %s requires Gladius", "DRTracker"))
 end
@@ -9,8 +9,12 @@ local DRData = LibStub("DRData-1.0")
 
 -- Global Functions
 local _G = _G
+local ipairs = ipairs
+local next = next
 local pairs = pairs
+local select = select
 local strfind = string.find
+local tonumber = tonumber
 local unpack = unpack
 
 local CreateFontString = CreateFontString
@@ -19,6 +23,43 @@ local GetSpellTexture = GetSpellTexture
 local GetTime = GetTime
 local IsInInstance = IsInInstance
 local UnitGUID = UnitGUID
+
+local function ApplyCooldownTextStyle(cooldown, iconSize, fontSize)
+	if not cooldown then
+		return
+	end
+
+	cooldown:SetSwipeColor(0, 0, 0, 0.6)
+	cooldown:SetDrawBling(false)
+	cooldown:SetHideCountdownNumbers(false)
+
+	local sized = false
+	if cooldown.Text and cooldown.Text.SetFont then
+		local fontPath = cooldown.Text:GetFont()
+		if fontPath then
+			cooldown.Text:SetFont(fontPath, fontSize or 12, "OUTLINE")
+		end
+		cooldown.Text:SetJustifyH("CENTER")
+		cooldown.Text:SetJustifyV("MIDDLE")
+		sized = true
+	end
+
+	if not sized then
+		local n = select("#", cooldown:GetRegions())
+		for i = 1, n do
+			local region = select(i, cooldown:GetRegions())
+			if region and region.GetObjectType and region:GetObjectType() == "FontString" and region.SetFont then
+				local fontPath = region:GetFont()
+				if fontPath then
+					region:SetFont(fontPath, fontSize or 12, "OUTLINE")
+				end
+				region:SetJustifyH("CENTER")
+				region:SetJustifyV("MIDDLE")
+				break
+			end
+		end
+	end
+end
 
 
 local DRTracker = Gladius:NewModule("DRTracker", false, true, {
@@ -108,6 +149,167 @@ function DRTracker:UpdateColors(unit)
 		local tracked = self.frame[unit].tracker[cat]
 		tracked.normalTexture:SetVertexColor(Gladius.db.drTrackerGlossColor.r, Gladius.db.drTrackerGlossColor.g, Gladius.db.drTrackerGlossColor.b, Gladius.db.drTrackerGloss and Gladius.db.drTrackerGlossColor.a or 0)
 		tracked.text:SetTextColor(Gladius.db.drFontColor.r, Gladius.db.drFontColor.g, Gladius.db.drFontColor.b, Gladius.db.drFontColor.a)
+	end
+end
+
+function DRTracker:InstallBlizzTrayAnchors(drTray)
+	if drTray._gladiusAnchorsInstalled then
+		return
+	end
+	drTray._gladiusAnchorsInstalled = true
+
+	drTray.AnchorFirstTrayItem = function(traySelf, trayItem)
+		trayItem:ClearAllPoints()
+		if strfind(Gladius.db.drTrackerAnchor, "LEFT") then
+			trayItem:SetPoint("LEFT", traySelf, "LEFT", 0, 0)
+		elseif strfind(Gladius.db.drTrackerAnchor, "RIGHT") then
+			trayItem:SetPoint("RIGHT", traySelf, "RIGHT", 0, 0)
+		elseif strfind(Gladius.db.drTrackerAnchor, "BOTTOM") then
+			trayItem:SetPoint("BOTTOM", traySelf, "BOTTOM", 0, 0)
+		else
+			trayItem:SetPoint("TOP", traySelf, "TOP", 0, 0)
+		end
+	end
+
+	drTray.AnchorNextTrayItem = function(traySelf, trayItem, previousTrayItem)
+		trayItem:ClearAllPoints()
+		local gap = Gladius.db.drTrackerMargin or 5
+		if strfind(Gladius.db.drTrackerAnchor, "LEFT") then
+			trayItem:SetPoint("LEFT", previousTrayItem, "RIGHT", gap, 0)
+		elseif strfind(Gladius.db.drTrackerAnchor, "RIGHT") then
+			trayItem:SetPoint("RIGHT", previousTrayItem, "LEFT", -gap, 0)
+		elseif strfind(Gladius.db.drTrackerAnchor, "BOTTOM") then
+			trayItem:SetPoint("BOTTOM", previousTrayItem, "TOP", 0, gap)
+		else
+			trayItem:SetPoint("TOP", previousTrayItem, "BOTTOM", 0, -gap)
+		end
+	end
+end
+
+function DRTracker:StyleBlizzDRItem(drFrame, iconSize)
+	if not drFrame then
+		return
+	end
+
+	drFrame:EnableMouse(false)
+	if drFrame.SetMouseClickEnabled then
+		drFrame:SetMouseClickEnabled(false)
+	end
+
+	if not drFrame._gladiusStyled then
+		drFrame._gladiusStyled = true
+
+		drFrame.Boverlay = CreateFrame("Frame", nil, drFrame)
+		drFrame.Boverlay:SetAllPoints(drFrame)
+		drFrame.Boverlay:SetFrameStrata("MEDIUM")
+		drFrame.Boverlay:SetFrameLevel(26)
+		drFrame.Boverlay:Show()
+
+		drFrame.Border = drFrame.Boverlay:CreateTexture(nil, "OVERLAY", nil, 6)
+		drFrame.Border:SetTexture("Interface\\Buttons\\UI-Quickslot-Depress")
+		drFrame.Border:SetVertexColor(0, 1, 0, 1)
+
+		drFrame.DRTextFrame = CreateFrame("Frame", nil, drFrame)
+		drFrame.DRTextFrame:SetAllPoints(drFrame)
+		drFrame.DRTextFrame:SetFrameStrata("HIGH")
+		drFrame.DRTextFrame:SetFrameLevel(30)
+
+		drFrame.DRText = drFrame.DRTextFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		drFrame.DRText:SetPoint("BOTTOMRIGHT", 4, -4)
+		drFrame.DRText:SetTextColor(0, 1, 0, 1)
+		drFrame.DRText:SetText("\194\189")
+
+		if drFrame.ImmunityIndicator and not drFrame._gladiusImmuneOverlay then
+			drFrame._gladiusImmuneOverlay = true
+			drFrame.ImmunityIndicator:SetFrameStrata("MEDIUM")
+			drFrame.ImmunityIndicator:SetFrameLevel(27)
+			drFrame.ImmunityIndicator:SetAlpha(0)
+
+			local immuneOverlay = CreateFrame("Frame", nil, drFrame.ImmunityIndicator)
+			immuneOverlay:SetAllPoints(drFrame)
+			immuneOverlay:SetFrameStrata("HIGH")
+			immuneOverlay:SetFrameLevel(35)
+			immuneOverlay:SetIgnoreParentAlpha(true)
+
+			drFrame.BorderImmune = immuneOverlay:CreateTexture(nil, "OVERLAY", nil, 7)
+			drFrame.BorderImmune:SetTexture("Interface\\Buttons\\UI-Quickslot-Depress")
+			drFrame.BorderImmune:SetVertexColor(1, 0, 0, 1)
+
+			drFrame.DRText2 = immuneOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+			drFrame.DRText2:SetPoint("BOTTOMRIGHT", 4, -4)
+			drFrame.DRText2:SetTextColor(1, 0, 0, 1)
+			drFrame.DRText2:SetText("%")
+		end
+
+		if not drFrame._gladiusOnHideHooked then
+			drFrame._gladiusOnHideHooked = true
+			drFrame:HookScript("OnHide", function()
+				if drFrame.Border then
+					drFrame.Border:SetVertexColor(0, 1, 0, 1)
+				end
+				if drFrame.DRText then
+					drFrame.DRText:SetText("\194\189")
+					drFrame.DRText:SetTextColor(0, 1, 0, 1)
+				end
+			end)
+		end
+	end
+
+	drFrame:SetSize(iconSize, iconSize)
+	local borderSize = 2.5
+	if drFrame.Border then
+		drFrame.Border:ClearAllPoints()
+		drFrame.Border:SetPoint("TOPLEFT", drFrame, "TOPLEFT", -borderSize, borderSize)
+		drFrame.Border:SetPoint("BOTTOMRIGHT", drFrame, "BOTTOMRIGHT", borderSize, -borderSize)
+	end
+	if drFrame.BorderImmune then
+		drFrame.BorderImmune:ClearAllPoints()
+		drFrame.BorderImmune:SetPoint("TOPLEFT", drFrame, "TOPLEFT", -borderSize, borderSize)
+		drFrame.BorderImmune:SetPoint("BOTTOMRIGHT", drFrame, "BOTTOMRIGHT", borderSize, -borderSize)
+	end
+	if drFrame.DRText then
+		drFrame.DRText:SetFont("Fonts\\ARIALN.TTF", Gladius.db.drFontSize or 14, "OUTLINE")
+	end
+	if drFrame.DRText2 then
+		drFrame.DRText2:SetFont("Fonts\\ARIALN.TTF", Gladius.db.drFontSize or 14, "OUTLINE")
+	end
+
+	ApplyCooldownTextStyle(drFrame.Cooldown, iconSize, Gladius.db.drFontSize or 12)
+end
+
+function DRTracker:StyleBlizzDRTray(unit, id, drTray)
+	if not drTray or not unit then
+		return
+	end
+
+	local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
+	drTray:ClearAllPoints()
+	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX, Gladius.db.drTrackerOffsetY)
+	drTray:SetFrameStrata("HIGH")
+	drTray:SetFrameLevel(Gladius.db.drTrackerFrameLevel + 5)
+	drTray:SetScale(1)
+	self:InstallBlizzTrayAnchors(drTray)
+
+	local iconSize = (self.frame[unit] and self.frame[unit]:GetHeight()) or Gladius.db.drTrackerSize
+	for _, drFrame in ipairs({ drTray:GetChildren() }) do
+		self:StyleBlizzDRItem(drFrame, iconSize)
+	end
+	if drTray.RefreshTrayLayout then
+		drTray:RefreshTrayLayout()
+	end
+
+	if not drTray._gladiusOnEventHooked then
+		drTray._gladiusOnEventHooked = true
+		local tracker = self
+		local trayRef = drTray
+		local unitRef = unit
+		local idRef = id
+		drTray:HookScript("OnEvent", function(_, event)
+			if event ~= "UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED" then
+				return
+			end
+			tracker:StyleBlizzDRTray(unitRef, idRef, trayRef)
+		end)
 	end
 end
 
@@ -299,6 +501,12 @@ function DRTracker:Update(unit)
 		end
 		self:SortIcons(unit)
 	end
+
+	-- Re-apply stolen Blizzard tray visuals/layout when settings change.
+	local id = tonumber(unit:match("arena(%d)"))
+	if id and self.blizzDRTrays and self.blizzDRTrays[id] then
+		self:StyleBlizzDRTray(unit, id, self.blizzDRTrays[id])
+	end
 	-- hide
 	self.frame[unit]:SetAlpha(0)
 end
@@ -408,22 +616,7 @@ function DRTracker:StealBlizzDRTray(unit, id)
 	drTray:SetFrameStrata("HIGH")
 	drTray:SetFrameLevel(Gladius.db.drTrackerFrameLevel + 5)
 	drTray:Show()
-
-	-- Scale the tray to match Gladius DR size settings.
-	-- We CANNOT hook CreateTrayItemForCategory or iterate trayItemOrder/GetActiveTrayItemForCategory
-	-- because doing so taints the execution path, causing Blizzard's own internal code to fail
-	-- when it tries to use secret category values as table indices on Midnight (12.x).
-	-- SetScale uniformly scales the tray and all its children without touching any secret values.
-	local drSize = self.frame[unit] and self.frame[unit]:GetHeight() or Gladius.db.drTrackerSize
-	local defaultItemSize = drTray.minimumHeight or 30
-	if defaultItemSize <= 0 then
-		defaultItemSize = 30
-	end
-	local scale = drSize / defaultItemSize
-	if scale <= 0 then
-		scale = 1
-	end
-	drTray:SetScale(scale)
+	self:StyleBlizzDRTray(unit, id, drTray)
 
 	self.blizzDRTrays[id] = drTray
 	return true
