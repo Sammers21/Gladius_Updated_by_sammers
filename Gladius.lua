@@ -97,6 +97,9 @@ function Gladius:SafeRegisterEvent(frame, event)
 end
 
 function Gladius:Call(handler, func, ...)
+	if not handler or type(handler.IsEnabled) ~= "function" then
+		return
+	end
 	-- module disabled, return
 	if not handler:IsEnabled() then
 		return
@@ -304,6 +307,36 @@ function Gladius:OnInitialize()
 		end
 	end
 
+	local removedModules = {
+		Announcements = true,
+		Auras = true,
+		Timer = true,
+		TargetBar = true,
+	}
+
+	for _, profile in pairs(self.dbi["profiles"]) do
+		if profile["modules"] then
+			for moduleName in pairs(removedModules) do
+				profile["modules"][moduleName] = nil
+			end
+		end
+		profile["announcements"] = nil
+
+		for optionKey, optionValue in pairs(profile) do
+			if type(optionKey) == "string" and type(optionValue) == "string" and strfind(optionKey, "AttachTo$") and removedModules[optionValue] then
+				profile[optionKey] = "Frame"
+			end
+		end
+
+		if type(profile["tagsTexts"]) == "table" then
+			for _, textConfig in pairs(profile["tagsTexts"]) do
+				if type(textConfig) == "table" and removedModules[textConfig.attachTo] then
+					textConfig.attachTo = "HealthBar"
+				end
+			end
+		end
+	end
+
 	self.db = setmetatable(self.dbi.profile, {
 		__newindex = function(t, index, value)
 		if type(value) == "table" then
@@ -475,24 +508,26 @@ function Gladius:JoinedArena()
 				-- Hook name text
 				if blizzFrame.name and blizzFrame.name.SetText then
 					hooksecurefunc(blizzFrame.name, "SetText", function(_, text)
-						if self.buttons[unit] and text and text ~= "" then
-							self.buttons[unit].nameText = text
+						local button = self.buttons[unit]
+						if button and button.secretNameSink then
+							button.secretNameSink:SetText(text or "")
 						end
 					end)
 				end
 				-- Hook health bar value
 				if blizzFrame.healthBar and blizzFrame.healthBar.SetValue then
 					hooksecurefunc(blizzFrame.healthBar, "SetValue", function(_, value)
-						if self.buttons[unit] then
-							self.buttons[unit].healthValue = value
+						local button = self.buttons[unit]
+						if button and button.secretHealthSink and value ~= nil then
+							button.secretHealthSink:SetValue(value)
 						end
 					end)
 				end
 				if blizzFrame.healthBar and blizzFrame.healthBar.SetMinMaxValues then
 					hooksecurefunc(blizzFrame.healthBar, "SetMinMaxValues", function(_, minVal, maxVal)
-						if self.buttons[unit] then
-							self.buttons[unit].healthMin = minVal
-							self.buttons[unit].healthMax = maxVal
+						local button = self.buttons[unit]
+						if button and button.secretHealthSink then
+							button.secretHealthSink:SetMinMaxValues(minVal or 0, maxVal or 0)
 						end
 					end)
 				end
@@ -539,9 +574,6 @@ function Gladius:LeftArena()
 		self:ResetUnit(unit)
 	end
 
-	-- Clear reload warning flag so it shows again next arena session
-	self.db.midnightReloadShown = nil
-
 	-- unregister combat events
 	self:UnregisterAllEvents()
 	self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -549,7 +581,7 @@ function Gladius:LeftArena()
 end
 
 function Gladius:ShowMidnightReloadWarning()
-	-- Only show once per arena session (persists across reloads via SavedVariables)
+	-- Only show once per profile (persists across sessions via SavedVariables)
 	if self.db.midnightReloadShown then
 		return
 	end
@@ -927,6 +959,13 @@ function Gladius:ResetUnit(unit, module)
 		end
 	end
 	self.buttons[unit].spec = ""
+	if self.buttons[unit].secretNameSink then
+		self.buttons[unit].secretNameSink:SetText("")
+	end
+	if self.buttons[unit].secretHealthSink then
+		self.buttons[unit].secretHealthSink:SetMinMaxValues(0, 1)
+		self.buttons[unit].secretHealthSink:SetValue(0)
+	end
 	-- hide the button
 	self.buttons[unit]:SetAlpha(0)
 	-- hide the secure frame
@@ -939,6 +978,39 @@ function Gladius:UpdateAlpha(unit, alpha)
 	if self.buttons[unit] then
 		self.buttons[unit]:SetAlpha(alpha)
 	end
+end
+
+function Gladius:GetCapturedArenaName(unit)
+	local button = self.buttons and self.buttons[unit]
+	if button and button.secretNameSink then
+		local ok, name = pcall(button.secretNameSink.GetText, button.secretNameSink)
+		if ok and name and name ~= "" then
+			return name
+		end
+	end
+	return nil
+end
+
+function Gladius:GetCapturedArenaHealth(unit)
+	local button = self.buttons and self.buttons[unit]
+	if button and button.secretHealthSink then
+		local ok, value = pcall(button.secretHealthSink.GetValue, button.secretHealthSink)
+		if ok and value ~= nil then
+			return value
+		end
+	end
+	return nil
+end
+
+function Gladius:GetCapturedArenaMaxHealth(unit)
+	local button = self.buttons and self.buttons[unit]
+	if button and button.secretHealthSink then
+		local ok, _, maxValue = pcall(button.secretHealthSink.GetMinMaxValues, button.secretHealthSink)
+		if ok and maxValue ~= nil then
+			return maxValue
+		end
+	end
+	return nil
 end
 
 function Gladius:CreateButton(unit)
@@ -976,6 +1048,14 @@ function Gladius:CreateButton(unit)
 	secure:EnableKeyboard(true)
 	secure:RegisterForClicks("AnyUp", "AnyDown")
 	button.secure = secure
+	-- Secret-value sinks for Midnight arena data.
+	button.secretNameSink = button:CreateFontString(nil, "OVERLAY")
+	button.secretNameSink:Hide()
+	button.secretHealthSink = CreateFrame("StatusBar", nil, button)
+	button.secretHealthSink:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+	button.secretHealthSink:SetMinMaxValues(0, 1)
+	button.secretHealthSink:SetValue(0)
+	button.secretHealthSink:Hide()
 	-- clique
 	ClickCastFrames = ClickCastFrames or {}
 	ClickCastFrames[secure] = true

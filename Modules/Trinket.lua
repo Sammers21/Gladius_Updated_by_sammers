@@ -258,17 +258,18 @@ function Trinket:GetTrinketCD(unit)
 	return cd
 end
 function Trinket:UpdateTrinket(unit, duration)
+	local announcements = Gladius.db.announcements
 	-- grid style icon
 	if Gladius.db.trinketGridStyleIcon then
 		self.frame[unit].texture:SetVertexColor(Gladius.db.trinketGridStyleIconUsedColor.r, Gladius.db.trinketGridStyleIconUsedColor.g, Gladius.db.trinketGridStyleIconUsedColor.b, Gladius.db.trinketGridStyleIconUsedColor.a)
 	end
 	-- announcement
-	if Gladius.db.announcements.trinket then
+	if announcements and announcements.trinket then
 		local nameOk, unitName = pcall(UnitName, unit)
 		local classOk, unitClass = pcall(UnitClass, unit)
 		Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["TRINKET USED: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
 	end
-	if Gladius.db.announcements.trinket or Gladius.db.trinketGridStyleIcon then
+	if (announcements and announcements.trinket) or Gladius.db.trinketGridStyleIcon then
 		self.frame[unit].timeleft = duration
 		self.frame[unit]:SetScript("OnUpdate", function(f, elapsed)
 			self.frame[unit].timeleft = self.frame[unit].timeleft - elapsed
@@ -279,7 +280,7 @@ function Trinket:UpdateTrinket(unit, duration)
 					self.frame[unit].texture:SetVertexColor(Gladius.db.trinketGridStyleIconColor.r, Gladius.db.trinketGridStyleIconColor.g, Gladius.db.trinketGridStyleIconColor.b, Gladius.db.trinketGridStyleIconColor.a)
 				end
 				-- announcement
-				if Gladius.db.announcements.trinket then
+				if announcements and announcements.trinket then
 					local nameOk, unitName = pcall(UnitName, unit)
 					local classOk, unitClass = pcall(UnitClass, unit)
 					Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["TRINKET READY: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
@@ -543,7 +544,19 @@ end
 
 -- Add the announcement toggle
 function Trinket:OptionsLoad()
-	Gladius.options.args.Announcements.args.general.args.announcements.args.trinket = {
+	local announcementsArgs = Gladius.options
+		and Gladius.options.args
+		and Gladius.options.args.Announcements
+		and Gladius.options.args.Announcements.args
+		and Gladius.options.args.Announcements.args.general
+		and Gladius.options.args.Announcements.args.general.args
+		and Gladius.options.args.Announcements.args.general.args.announcements
+		and Gladius.options.args.Announcements.args.general.args.announcements.args
+	if not announcementsArgs then
+		return
+	end
+
+	announcementsArgs.trinket = {
 		type = "toggle",
 		name = L["Trinket"],
 		desc = L["Announces when an enemy uses a PvP trinket."],

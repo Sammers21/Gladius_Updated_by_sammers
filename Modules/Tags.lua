@@ -823,11 +823,11 @@ end
 function Tags:GetTags()
 	return {
 		["name"] = {
-			func = "function(unit)\nlocal ok, name = pcall(UnitName, unit)\nif ok and name then return name end\nif Gladius.buttons[unit] and Gladius.buttons[unit].nameText then return Gladius.buttons[unit].nameText end\nreturn unit\nend",
+			func = "function(unit)\nlocal ok, name = pcall(UnitName, unit)\nif ok and name then return name end\nlocal cached = Gladius.GetCapturedArenaName and Gladius:GetCapturedArenaName(unit)\nif cached then return cached end\nreturn unit\nend",
 			events = "UNIT_NAME_UPDATE",
 		},
 		["name:status"] = {
-			func = "function(unit)\nlocal dok, dead = pcall(UnitIsDeadOrGhost, unit)\nif dok and dead then return Gladius.L[\"DEAD\"] end\nlocal ok, name = pcall(UnitName, unit)\nif ok and name then return name end\nif Gladius.buttons[unit] and Gladius.buttons[unit].nameText then return Gladius.buttons[unit].nameText end\nreturn unit\nend",
+			func = "function(unit)\nlocal dok, dead = pcall(UnitIsDeadOrGhost, unit)\nif dok and dead then return Gladius.L[\"DEAD\"] end\nlocal ok, name = pcall(UnitName, unit)\nif ok and name then return name end\nlocal cached = Gladius.GetCapturedArenaName and Gladius:GetCapturedArenaName(unit)\nif cached then return cached end\nreturn unit\nend",
 			events = "UNIT_NAME_UPDATE UNIT_HEALTH",
 		},
 		["class"] = {
@@ -855,23 +855,23 @@ function Tags:GetTags()
 			preparation = true
 		},
 		["health"] = {
-			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].health end\nlocal ok, v = pcall(UnitHealth, unit)\nif ok and v then return v end\nlocal b = Gladius.buttons[unit]\nif b and b.healthValue then return b.healthValue end\nreturn \"\"\nend",
+			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].health end\nlocal ok, v = pcall(UnitHealth, unit)\nif ok and v then return v end\nlocal cached = Gladius.GetCapturedArenaHealth and Gladius:GetCapturedArenaHealth(unit)\nif cached ~= nil then return cached end\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["maxhealth"] = {
-			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].maxHealth end\nlocal ok, v = pcall(UnitHealthMax, unit)\nif ok and v then return v end\nlocal b = Gladius.buttons[unit]\nif b and b.healthMax then return b.healthMax end\nreturn \"\"\nend",
+			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].maxHealth end\nlocal ok, v = pcall(UnitHealthMax, unit)\nif ok and v then return v end\nlocal cached = Gladius.GetCapturedArenaMaxHealth and Gladius:GetCapturedArenaMaxHealth(unit)\nif cached ~= nil then return cached end\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["health:short"] = {
-			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].health end\nlocal ok, v = pcall(UnitHealth, unit)\nif ok and v then return v end\nlocal b = Gladius.buttons[unit]\nif b and b.healthValue then return b.healthValue end\nreturn \"\"\nend",
+			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].health end\nlocal ok, v = pcall(UnitHealth, unit)\nif ok and v then return v end\nlocal cached = Gladius.GetCapturedArenaHealth and Gladius:GetCapturedArenaHealth(unit)\nif cached ~= nil then return cached end\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["maxhealth:short"] = {
-			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].maxHealth end\nlocal ok, v = pcall(UnitHealthMax, unit)\nif ok and v then return v end\nlocal b = Gladius.buttons[unit]\nif b and b.healthMax then return b.healthMax end\nreturn \"\"\nend",
+			func = "function(unit)\nif Gladius.test then return Gladius.testing[unit].maxHealth end\nlocal ok, v = pcall(UnitHealthMax, unit)\nif ok and v then return v end\nlocal cached = Gladius.GetCapturedArenaMaxHealth and Gladius:GetCapturedArenaMaxHealth(unit)\nif cached ~= nil then return cached end\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["health:percentage"] = {
-			func = "function(unit)\nif Gladius.test then\nlocal health = Gladius.testing[unit].health\nlocal maxHealth = Gladius.testing[unit].maxHealth\nreturn strformat(\"%.1f%%\", (health / maxHealth * 100))\nend\nlocal ok, pct = pcall(function() return UnitHealthPercent(unit, nil, CurveConstants.ScaleTo100) end)\nif ok and pct then return strformat(\"%.1f%%\", pct) end\nlocal b = Gladius.buttons[unit]\nif b and b.healthValue and b.healthMax and b.healthMax > 0 then\nreturn strformat(\"%.1f%%\", b.healthValue / b.healthMax * 100)\nend\nreturn \"\"\nend",
+			func = "function(unit)\nif Gladius.test then\nlocal health = Gladius.testing[unit].health\nlocal maxHealth = Gladius.testing[unit].maxHealth\nreturn strformat(\"%.1f%%\", (health / maxHealth * 100))\nend\nlocal ok, pct = pcall(function() return UnitHealthPercent(unit, nil, CurveConstants.ScaleTo100) end)\nif ok and pct then return strformat(\"%.1f%%\", pct) end\nlocal health = Gladius.GetCapturedArenaHealth and Gladius:GetCapturedArenaHealth(unit)\nlocal maxHealth = Gladius.GetCapturedArenaMaxHealth and Gladius:GetCapturedArenaMaxHealth(unit)\nlocal okFallback, fallbackPct = pcall(function()\nif health and maxHealth and maxHealth > 0 then\nreturn strformat(\"%.1f%%\", health / maxHealth * 100)\nend\nreturn \"\"\nend)\nif okFallback then return fallbackPct end\nreturn \"\"\nend",
 			events = "UNIT_HEALTH UNIT_MAXHEALTH UNIT_NAME_UPDATE"
 		},
 		["power"] = {

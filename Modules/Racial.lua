@@ -220,8 +220,9 @@ function Racial:GetRacialCD(unit)
 	return cd
 end
 function Racial:UpdateRacial(unit, duration)
+	local announcements = Gladius.db.announcements
 	-- announcement
-	if Gladius.db.announcements.Racial then
+	if announcements and announcements.Racial then
 		local nameOk, unitName = pcall(UnitName, unit)
 		local classOk, unitClass = pcall(UnitClass, unit)
 		Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["Racial USED: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
@@ -232,7 +233,7 @@ function Racial:UpdateRacial(unit, duration)
 		if self.frame[unit].timeleft <= 0 then
 			self.frame[unit].timeleft = nil
 			-- announcement
-			if Gladius.db.announcements.Racial then
+			if announcements and announcements.Racial then
 				local nameOk, unitName = pcall(UnitName, unit)
 				local classOk, unitClass = pcall(UnitClass, unit)
 				Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["Racial READY: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
@@ -415,7 +416,19 @@ end
 
 -- Add the announcement toggle
 function Racial:OptionsLoad()
-	Gladius.options.args.Announcements.args.general.args.announcements.args.Racial = {
+	local announcementsArgs = Gladius.options
+		and Gladius.options.args
+		and Gladius.options.args.Announcements
+		and Gladius.options.args.Announcements.args
+		and Gladius.options.args.Announcements.args.general
+		and Gladius.options.args.Announcements.args.general.args
+		and Gladius.options.args.Announcements.args.general.args.announcements
+		and Gladius.options.args.Announcements.args.general.args.announcements.args
+	if not announcementsArgs then
+		return
+	end
+
+	announcementsArgs.Racial = {
 		type = "toggle",
 		name = L["Racial"],
 		desc = L["Announces when an enemy uses a Racial."],
