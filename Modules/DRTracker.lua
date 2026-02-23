@@ -92,6 +92,7 @@ function DRTracker:OnEnable()
 	-- COMBAT_LOG_EVENT_UNFILTERED is protected on Midnight (12.x), skip registration.
 	-- Use Blizzard's SpellDiminishStatusTray instead of custom DR tracking.
 	LSM = Gladius.LSM
+
 	if not self.frame then
 		self.frame = { }
 	end
@@ -257,7 +258,7 @@ function DRTracker:StyleBlizzDRTray(unit, id, drTray)
 
 	local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
 	drTray:ClearAllPoints()
-	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX, Gladius.db.drTrackerOffsetY)
+	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX - 5, Gladius.db.drTrackerOffsetY - 4)
 	drTray:SetFrameStrata("HIGH")
 	drTray:SetFrameLevel(Gladius.db.drTrackerFrameLevel + 5)
 	drTray:SetScale(1)
@@ -426,7 +427,7 @@ function DRTracker:Update(unit)
 	self.frame[unit]:ClearAllPoints()
 	-- anchor point
 	local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
-	self.frame[unit]:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX, Gladius.db.drTrackerOffsetY)
+	self.frame[unit]:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX - 6, Gladius.db.drTrackerOffsetY - 4)
 	-- frame level
 	self.frame[unit]:SetFrameLevel(Gladius.db.drTrackerFrameLevel)
 	-- when the attached module is disabled
@@ -497,16 +498,12 @@ function DRTracker:RestoreBlizzDRTray(id)
 	end
 
 	drTray:ClearAllPoints()
-	if state and state.point and state.relativePoint then
-		drTray:SetPoint(state.point, state.relativeTo, state.relativePoint, state.offsetX, state.offsetY)
-	elseif blizzFrame then
-		-- Fallback if original point info is unavailable.
+	-- GetPoint() may return secret values in arena context, so always use
+	-- a known-safe anchor when restoring the tray to its Blizzard parent.
+	if blizzFrame then
 		drTray:SetPoint("TOPLEFT", blizzFrame, "TOPLEFT", 0, 0)
 	end
 
-	if state and state.frameStrata then
-		drTray:SetFrameStrata(state.frameStrata)
-	end
 	if state and state.frameLevel then
 		drTray:SetFrameLevel(state.frameLevel)
 	end
@@ -558,16 +555,11 @@ function DRTracker:StealBlizzDRTray(unit, id)
 	local drTray = blizzFrame.SpellDiminishStatusTray
 
 	-- Keep original state so we can fully restore on reset/disable.
+	-- Note: GetPoint() returns secret values in arena, so we don't store point
+	-- data — RestoreBlizzDRTray uses a known-safe fallback anchor instead.
 	if not self.originalDRTrayState[id] then
-		local point, relativeTo, relativePoint, offsetX, offsetY = drTray:GetPoint(1)
 		self.originalDRTrayState[id] = {
 			parent = drTray:GetParent(),
-			point = point,
-			relativeTo = relativeTo,
-			relativePoint = relativePoint,
-			offsetX = offsetX,
-			offsetY = offsetY,
-			frameStrata = drTray:GetFrameStrata(),
 			frameLevel = drTray:GetFrameLevel(),
 			scale = drTray:GetScale(),
 		}
@@ -577,7 +569,7 @@ function DRTracker:StealBlizzDRTray(unit, id)
 	drTray:SetParent(Gladius.buttons[unit])
 	drTray:ClearAllPoints()
 	local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
-	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX, Gladius.db.drTrackerOffsetY)
+	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX - 5, Gladius.db.drTrackerOffsetY - 4)
 	drTray:EnableMouse(false)
 	if drTray.SetMouseClickEnabled then
 		drTray:SetMouseClickEnabled(false)
