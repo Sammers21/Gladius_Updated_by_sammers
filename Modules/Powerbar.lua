@@ -215,7 +215,7 @@ function PowerBar:Update(unit)
 	-- get unit powerType
 	local powerType
 	if not Gladius.test then
-    powerType = UnitPowerType(unit) or self:GetUnitPowerTypeFallback(unit)
+    powerType = UnitPowerType(unit) or self:GetUnitPowerTypeFallback(unit) or 0
 	else
 		powerType = Gladius.testing[unit].powerType
 	end

@@ -482,14 +482,9 @@ function Gladius:JoinedArena()
 			classIconModule:HookBlizzDebuffs("arena" .. i)
 		end
 	end
-	-- Reset and re-hook Blizzard's CcRemoverFrame for trinket tracking
-	local trinketModule = self.modules["Trinket"]
-	if trinketModule and trinketModule:IsEnabled() then
-		trinketModule.hookedBlizzTrinkets = {}
-		for i = 1, 5 do
-			trinketModule:HookBlizzTrinket("arena" .. i)
-		end
-	end
+	-- Trinket hooking is handled by Trinket:Show() with retry logic.
+	-- Do NOT reset hookedBlizzTrinkets here — hooksecurefunc stacks
+	-- and cannot be removed, so re-hooking causes duplicate calls.
 
 	-- Hook Blizzard's CompactArenaFrame name/health text BEFORE hiding
 	-- This allows us to capture name and HP values that are secret in 12.0

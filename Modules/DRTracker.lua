@@ -152,39 +152,12 @@ function DRTracker:UpdateColors(unit)
 	end
 end
 
-function DRTracker:InstallBlizzTrayAnchors(drTray)
-	if drTray._gladiusAnchorsInstalled then
-		return
-	end
-	drTray._gladiusAnchorsInstalled = true
-
-	drTray.AnchorFirstTrayItem = function(traySelf, trayItem)
-		trayItem:ClearAllPoints()
-		if strfind(Gladius.db.drTrackerAnchor, "LEFT") then
-			trayItem:SetPoint("LEFT", traySelf, "LEFT", 0, 0)
-		elseif strfind(Gladius.db.drTrackerAnchor, "RIGHT") then
-			trayItem:SetPoint("RIGHT", traySelf, "RIGHT", 0, 0)
-		elseif strfind(Gladius.db.drTrackerAnchor, "BOTTOM") then
-			trayItem:SetPoint("BOTTOM", traySelf, "BOTTOM", 0, 0)
-		else
-			trayItem:SetPoint("TOP", traySelf, "TOP", 0, 0)
-		end
-	end
-
-	drTray.AnchorNextTrayItem = function(traySelf, trayItem, previousTrayItem)
-		trayItem:ClearAllPoints()
-		local gap = Gladius.db.drTrackerMargin or 5
-		if strfind(Gladius.db.drTrackerAnchor, "LEFT") then
-			trayItem:SetPoint("LEFT", previousTrayItem, "RIGHT", gap, 0)
-		elseif strfind(Gladius.db.drTrackerAnchor, "RIGHT") then
-			trayItem:SetPoint("RIGHT", previousTrayItem, "LEFT", -gap, 0)
-		elseif strfind(Gladius.db.drTrackerAnchor, "BOTTOM") then
-			trayItem:SetPoint("BOTTOM", previousTrayItem, "TOP", 0, gap)
-		else
-			trayItem:SetPoint("TOP", previousTrayItem, "BOTTOM", 0, -gap)
-		end
-	end
-end
+-- NOTE: Do NOT replace AnchorFirstTrayItem/AnchorNextTrayItem on the tray.
+-- Replacing methods taints the tray object, causing Blizzard's
+-- UpdateTrayItemAnchoring to fail when accessing activeItemForCategory
+-- (forbidden table). Instead, the tray's SetPoint anchor controls visual
+-- growth direction via ResizeLayoutFrame — same approach as sArena_Updated2
+-- and sArena_Reloaded.
 
 function DRTracker:StyleBlizzDRItem(drFrame, iconSize)
 	if not drFrame then
@@ -288,14 +261,10 @@ function DRTracker:StyleBlizzDRTray(unit, id, drTray)
 	drTray:SetFrameStrata("HIGH")
 	drTray:SetFrameLevel(Gladius.db.drTrackerFrameLevel + 5)
 	drTray:SetScale(1)
-	self:InstallBlizzTrayAnchors(drTray)
 
 	local iconSize = (self.frame[unit] and self.frame[unit]:GetHeight()) or Gladius.db.drTrackerSize
 	for _, drFrame in ipairs({ drTray:GetChildren() }) do
 		self:StyleBlizzDRItem(drFrame, iconSize)
-	end
-	if drTray.RefreshTrayLayout then
-		drTray:RefreshTrayLayout()
 	end
 
 	if not drTray._gladiusOnEventHooked then

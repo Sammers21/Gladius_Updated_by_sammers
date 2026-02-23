@@ -125,33 +125,7 @@ end
 	end
 end]]
 function Trinket:ARENA_COOLDOWNS_UPDATE(event, unit)
-	if not unit or not strfind(unit, "arena") or strfind(unit, "pet") then
-		return
-	end
-	if not self.frame[unit] then return end
-	if C_PvP and C_PvP.GetArenaCrowdControlInfo then
-		local ok, ccSpellID, startTime, duration = pcall(C_PvP.GetArenaCrowdControlInfo, unit)
-		if ok and ccSpellID then
-			-- Update icon texture
-			if ccSpellID ~= self.frame[unit].spellID then
-				local spellTexture = GetSpellTexture(ccSpellID)
-				if spellTexture then
-					self.frame[unit].spellID = ccSpellID
-					self.frame[unit].texture:SetTexture(spellTexture)
-				end
-			end
-			-- Update cooldown
-			if startTime and startTime ~= 0 and duration and duration ~= 0 then
-				self.frame[unit].cooldown:SetCooldown(startTime / 1000.0, duration / 1000.0)
-				if not self.frame[unit].ccCooldownActive then
-					self.frame[unit].ccCooldownActive = true
-					self:UpdateTrinket(unit, duration / 1000.0)
-				end
-			else
-				self.frame[unit].ccCooldownActive = nil
-			end
-		end
-	end
+	-- Trinket cooldowns handled via CcRemoverFrame.SetCooldown hook
 end
 
 function Trinket:HookBlizzTrinket(unit)
@@ -163,18 +137,23 @@ function Trinket:HookBlizzTrinket(unit)
 	if not blizzFrame then return false end
 	if not blizzFrame.CcRemoverFrame then return false end
 
+	-- Require Gladius button to exist so we can reparent CcRemoverFrame
+	local button = Gladius.buttons[unit]
+	if not button then return false end
+
 	self.hookedBlizzTrinkets[id] = true
 	local trinket = self
 
-	hooksecurefunc(blizzFrame.CcRemoverFrame.Cooldown, "SetCooldown", function(_, start, duration)
+	-- Reparent CcRemoverFrame so it stays in a visible hierarchy when
+	-- CompactArenaFrame is hidden. Without this, Blizzard may skip
+	-- calling SetCooldown on hidden frames and the hook never fires.
+	local ccRemover = blizzFrame.CcRemoverFrame
+	ccRemover:SetParent(button)
+	ccRemover:SetAlpha(0)
+
+	hooksecurefunc(ccRemover.Cooldown, "SetCooldown", function(_, start, duration)
 		if not trinket.frame[unit] then return end
-		if start and duration and start > 0 and duration > 0 then
-			trinket.frame[unit].cooldown:SetCooldown(start, duration)
-			if not trinket.frame[unit].ccCooldownActive then
-				trinket.frame[unit].ccCooldownActive = true
-				trinket:UpdateTrinket(unit, duration)
-			end
-		end
+		trinket.frame[unit].cooldown:SetCooldown(start, duration)
 	end)
 
 	return true
@@ -187,8 +166,8 @@ function Trinket:ARENA_CROWD_CONTROL_SPELL_UPDATE(event, unit, spellID)
 		return
 	end
 	if not self.frame[unit] then return end
-	-- Update icon only; cooldown is handled by ARENA_COOLDOWNS_UPDATE and CcRemoverFrame hook
-	if spellID and spellID ~= self.frame[unit].spellID then
+	-- Update icon only; cooldown is handled by CcRemoverFrame hook
+	if not issecretvalue(spellID) and spellID ~= self.frame[unit].spellID then
 		local spellTexture = GetSpellTexture(spellID)
 		if spellTexture then
 			self.frame[unit].spellID = spellID
