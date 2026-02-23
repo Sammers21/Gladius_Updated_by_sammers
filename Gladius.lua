@@ -622,6 +622,7 @@ end
 
 function Gladius:LeftArena()
 	self:HideFrame()
+	self.midnightReloadWarningShown = false
 	-- reset units
 	for unit, _ in pairs(self.buttons) do
 		Gladius.buttons[unit]:RegisterForDrag()

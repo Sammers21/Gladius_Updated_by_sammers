@@ -227,10 +227,19 @@ function DRTracker:StyleBlizzDRItem(drFrame, iconSize)
 				end
 			end)
 		end
+
+		if not drFrame._gladiusOnShowHooked then
+			drFrame._gladiusOnShowHooked = true
+			drFrame:HookScript("OnShow", function()
+				drFrame:SetSize(drFrame._gladiusIconSize or iconSize, drFrame._gladiusIconSize or iconSize)
+			end)
+		end
 	end
 
-	drFrame:SetSize(iconSize, iconSize)
 	local borderSize = 2.5
+	local innerSize = iconSize - borderSize * 2
+	drFrame._gladiusIconSize = innerSize
+	drFrame:SetSize(innerSize, innerSize)
 	if drFrame.Border then
 		drFrame.Border:ClearAllPoints()
 		drFrame.Border:SetPoint("TOPLEFT", drFrame, "TOPLEFT", -borderSize, borderSize)
@@ -257,13 +266,13 @@ function DRTracker:StyleBlizzDRTray(unit, id, drTray)
 	end
 
 	local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
+	local iconSize = (self.frame[unit] and self.frame[unit]:GetHeight()) or Gladius.db.drTrackerSize
+	local halfSize = iconSize / 2
 	drTray:ClearAllPoints()
-	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX - 5, Gladius.db.drTrackerOffsetY - 4)
+	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX - halfSize, Gladius.db.drTrackerOffsetY)
 	drTray:SetFrameStrata("HIGH")
 	drTray:SetFrameLevel(Gladius.db.drTrackerFrameLevel + 5)
 	drTray:SetScale(1)
-
-	local iconSize = (self.frame[unit] and self.frame[unit]:GetHeight()) or Gladius.db.drTrackerSize
 	for _, drFrame in ipairs({ drTray:GetChildren() }) do
 		self:StyleBlizzDRItem(drFrame, iconSize)
 	end
@@ -279,6 +288,16 @@ function DRTracker:StyleBlizzDRTray(unit, id, drTray)
 				return
 			end
 			tracker:StyleBlizzDRTray(unitRef, idRef, trayRef)
+		end)
+
+		-- Catch newly created pool items that haven't been styled yet.
+		drTray:HookScript("OnUpdate", function()
+			local sz = (tracker.frame[unitRef] and tracker.frame[unitRef]:GetHeight()) or Gladius.db.drTrackerSize
+			for _, child in ipairs({ trayRef:GetChildren() }) do
+				if not child._gladiusStyled then
+					tracker:StyleBlizzDRItem(child, sz)
+				end
+			end
 		end)
 	end
 end
@@ -423,11 +442,6 @@ function DRTracker:Update(unit)
 	if not self.frame[unit] then
 		self:CreateFrame(unit)
 	end
-	-- update frame
-	self.frame[unit]:ClearAllPoints()
-	-- anchor point
-	local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
-	self.frame[unit]:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX - 6, Gladius.db.drTrackerOffsetY - 4)
 	-- frame level
 	self.frame[unit]:SetFrameLevel(Gladius.db.drTrackerFrameLevel)
 	-- when the attached module is disabled
@@ -458,6 +472,11 @@ function DRTracker:Update(unit)
 		self.frame[unit]:SetWidth(Gladius.db.drTrackerSize)
 		self.frame[unit]:SetHeight(Gladius.db.drTrackerSize)
 	end
+	-- anchor point (after sizing so iconSize is available)
+	self.frame[unit]:ClearAllPoints()
+	local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
+	local halfSize = self.frame[unit]:GetHeight() / 2
+	self.frame[unit]:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX - halfSize, Gladius.db.drTrackerOffsetY)
 	-- update icons
 	if not self.frame[unit].tracker then
 		self.frame[unit].tracker = { }
@@ -569,7 +588,9 @@ function DRTracker:StealBlizzDRTray(unit, id)
 	drTray:SetParent(Gladius.buttons[unit])
 	drTray:ClearAllPoints()
 	local parent = Gladius:GetParent(unit, Gladius.db.drTrackerAttachTo)
-	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX - 5, Gladius.db.drTrackerOffsetY - 4)
+	local iconSize = (self.frame[unit] and self.frame[unit]:GetHeight()) or Gladius.db.drTrackerSize
+	local halfSize = iconSize / 2
+	drTray:SetPoint(Gladius.db.drTrackerAnchor, parent, Gladius.db.drTrackerRelativePoint, Gladius.db.drTrackerOffsetX - halfSize, Gladius.db.drTrackerOffsetY)
 	drTray:EnableMouse(false)
 	if drTray.SetMouseClickEnabled then
 		drTray:SetMouseClickEnabled(false)
