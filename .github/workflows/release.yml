@@ -28,12 +28,9 @@ jobs:
           cp -R Libs Gladius_Updated_by_sammers/
           cp -R Modules Gladius_Updated_by_sammers/
           cp -R Images Gladius_Updated_by_sammers/
-          cp Code.lua Gladius_Updated_by_sammers/
-          cp Embeds.xml Gladius_Updated_by_sammers/
-          cp Gladius.lua Gladius_Updated_by_sammers/
+          cp *.lua Gladius_Updated_by_sammers/
+          cp *.xml Gladius_Updated_by_sammers/
           cp Gladius_Updated_by_sammers.toc Gladius_Updated_by_sammers/
-          cp Localizations.lua Gladius_Updated_by_sammers/
-          cp Options.lua Gladius_Updated_by_sammers/
           cp "!Changelog.txt" Gladius_Updated_by_sammers/
           zip -vr Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip Gladius_Updated_by_sammers/
       - name: "Create Github Release"
