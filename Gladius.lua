@@ -25,7 +25,6 @@ local IsLoggedIn = IsLoggedIn
 local UnitAura = UnitAura
 local UnitCastingInfo = UnitCastingInfo
 local UnitIsDeadOrGhost = UnitIsDeadOrGhost
-local ReloadUI = ReloadUI
 
 local UIParent = UIParent
 
@@ -33,8 +32,6 @@ Gladius = { }
 Gladius.eventHandler = CreateFrame("Frame")
 Gladius.eventHandler.events = { }
 Gladius.eventHandler.pendingEvents = { }
-Gladius.midnightBeenInArena = false
-Gladius.midnightReloadWarningShown = false
 
 Gladius.eventHandler:RegisterEvent("PLAYER_LOGIN")
 Gladius.eventHandler:RegisterEvent("ADDON_LOADED")
@@ -55,15 +52,6 @@ Gladius.eventHandler:SetScript("OnEvent", function(self, event, ...)
 	end
 	if event == "PLAYER_LOGIN" then
 		Gladius:OnInitialize()
-		-- Mirror sArena behavior:
-		-- - login outside arena: first arena entry should show warning
-		-- - login inside arena (reconnect): do not show in that arena
-		local _, loginInstanceType = IsInInstance()
-		if loginInstanceType ~= "arena" then
-			C_Timer.After(3, function()
-				Gladius.midnightBeenInArena = true
-			end)
-		end
 		-- Defer OnEnable to avoid protected state issues in 12.0+
 		C_Timer.After(0, function()
 			Gladius:OnEnable()
@@ -339,8 +327,6 @@ function Gladius:OnInitialize()
 		end
 		rawset(t, index, value)
 	end})
-	-- Legacy key from old reload-warning behavior; no longer used.
-	self.db.midnightReloadShown = nil
 
 	-- localization
 	L = self.L
@@ -611,18 +597,10 @@ function Gladius:JoinedArena()
 	if (numOpps and numOpps > 0) then
 		self:ARENA_PREP_OPPONENT_SPECIALIZATIONS()
 	end
-
-	-- Show warning only once, matching sArena's first-arena-entry behavior.
-	if self.midnightBeenInArena then
-		self:ShowMidnightReloadWarning()
-	else
-		self.midnightBeenInArena = true
-	end
 end
 
 function Gladius:LeftArena()
 	self:HideFrame()
-	self.midnightReloadWarningShown = false
 	-- reset units
 	for unit, _ in pairs(self.buttons) do
 		Gladius.buttons[unit]:RegisterForDrag()
@@ -634,111 +612,6 @@ function Gladius:LeftArena()
 	self:UnregisterAllEvents()
 	self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 	self:RegisterEvent("PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA")
-end
-
-function Gladius:ShowMidnightReloadWarning()
-	-- Session-local one-time warning (same practical behavior as sArena).
-	if self.midnightReloadWarningShown then
-		return
-	end
-	self.midnightReloadWarningShown = true
-
-	if self.midnightReloadWarningFrame then
-		self.midnightReloadWarningFrame:SetAlpha(0)
-		self.midnightReloadWarningFrame:Show()
-	else
-		local template = BackdropTemplateMixin and "BackdropTemplate" or nil
-		local frame = CreateFrame("Frame", "GladiusMidnightReloadWarning", UIParent, template)
-		frame:SetSize(460, 250)
-		frame:SetPoint("CENTER", UIParent, "CENTER", 0, 140)
-		frame:SetFrameStrata("DIALOG")
-		frame:EnableMouse(true)
-		frame:SetMovable(true)
-		frame:RegisterForDrag("LeftButton")
-		frame:SetScript("OnDragStart", function(f) f:StartMoving() end)
-		frame:SetScript("OnDragStop", function(f) f:StopMovingOrSizing() end)
-
-		frame:SetBackdrop({
-			bgFile = "Interface\\Buttons\\WHITE8x8",
-			edgeFile = "Interface\\Buttons\\WHITE8x8",
-			edgeSize = 1,
-			insets = {left = 1, right = 1, top = 1, bottom = 1},
-		})
-		frame:SetBackdropColor(0.04, 0.05, 0.09, 0.96)
-		frame:SetBackdropBorderColor(0.22, 0.75, 0.82, 0.55)
-
-		local stripe = frame:CreateTexture(nil, "ARTWORK")
-		stripe:SetTexture("Interface\\Buttons\\WHITE8x8")
-		stripe:SetPoint("TOPLEFT", 1, -1)
-		stripe:SetPoint("TOPRIGHT", -1, -1)
-		stripe:SetHeight(3)
-		stripe:SetVertexColor(0.20, 0.82, 0.90, 1)
-
-		local icon = frame:CreateTexture(nil, "OVERLAY")
-		icon:SetTexture("Interface\\DialogFrame\\DialogAlertIcon")
-		icon:SetSize(44, 44)
-		icon:SetPoint("TOP", 0, -14)
-
-		local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-		title:SetPoint("TOP", icon, "BOTTOM", 0, -8)
-		title:SetText("|cff40d0e0Gladius: Reload Recommended|r")
-
-		local body = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		body:SetPoint("TOP", title, "BOTTOM", 0, -12)
-		body:SetWidth(410)
-		body:SetJustifyH("CENTER")
-		body:SetText("Midnight (12.x) UI restrictions can cause arena data\n" ..
-			"to behave inconsistently on first load.\n\n" ..
-			"|cff88a0b0Reload UI once now for the most stable behavior.|r")
-
-		local reloadButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-		reloadButton:SetSize(160, 30)
-		reloadButton:SetPoint("BOTTOM", 0, 34)
-		reloadButton:SetText("Reload UI")
-		reloadButton:SetScript("OnClick", function()
-			ReloadUI()
-		end)
-
-		local dismissText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-		dismissText:SetPoint("TOP", reloadButton, "BOTTOM", 0, -4)
-		dismissText:SetText("|cff555566dismiss|r")
-
-		local dismissButton = CreateFrame("Button", nil, frame)
-		dismissButton:SetPoint("TOPLEFT", dismissText, "TOPLEFT", -6, 2)
-		dismissButton:SetPoint("BOTTOMRIGHT", dismissText, "BOTTOMRIGHT", 6, -2)
-		dismissButton:SetScript("OnClick", function()
-			frame:Hide()
-		end)
-		dismissButton:SetScript("OnEnter", function()
-			dismissText:SetText("|cff8899aadismiss|r")
-		end)
-		dismissButton:SetScript("OnLeave", function()
-			dismissText:SetText("|cff555566dismiss|r")
-		end)
-
-		local animationGroup = frame:CreateAnimationGroup()
-		local fade = animationGroup:CreateAnimation("Alpha")
-		fade:SetFromAlpha(0)
-		fade:SetToAlpha(1)
-		fade:SetDuration(0.4)
-		fade:SetSmoothing("OUT")
-		animationGroup:SetScript("OnFinished", function()
-			frame:SetAlpha(1)
-		end)
-		frame._fadeIn = animationGroup
-
-		self.midnightReloadWarningFrame = frame
-	end
-
-	local warningFrame = self.midnightReloadWarningFrame
-	if warningFrame then
-		warningFrame:Show()
-		if warningFrame._fadeIn then
-			warningFrame._fadeIn:Stop()
-			warningFrame:SetAlpha(0)
-			warningFrame._fadeIn:Play()
-		end
-	end
 end
 
 function Gladius:UNIT_NAME_UPDATE(event, unit)
