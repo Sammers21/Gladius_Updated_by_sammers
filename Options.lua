@@ -30,6 +30,7 @@ Gladius.defaults = {
 		globalFont = "Friz Quadrata TT",
 		barWidth = 160,
 		frameScale = 1,
+		enableCombatLogging = false,
 	},
 }
 
@@ -448,6 +449,22 @@ function Gladius:SetupOptions()
 								name = L["Use Global Font Size"],
 								desc = L["Toggle if you want to use the global font size"],
 								order = 10,
+							},
+						},
+					},
+					combatLogging = {
+						type = "group",
+						name = L["Combat Logging"],
+						desc = L["Combat logging settings"],
+						inline = true,
+						order = 5,
+						args = {
+							enableCombatLogging = {
+								type = "toggle",
+								name = L["Enable Combat Logging"],
+								desc = L["Automatically enable combat logging when entering arenas or battlegrounds. Logs are saved to WoW's Logs folder for analysis on sites like WoWArenaLogs."],
+								width = "full",
+								order = 1,
 							},
 						},
 					},

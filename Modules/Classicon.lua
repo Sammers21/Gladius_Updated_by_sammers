@@ -386,6 +386,7 @@ local ClassIcon = Gladius:NewModule("ClassIcon", false, true, {
 	classIconCooldownReverse = true,
 	classIconShowSpec = false,
 	classIconDetached = false,
+	classIconAuraPriorityOrder = {"CROWD_CONTROL", "BIG_DEFENSIVE", "EXTERNAL_DEFENSIVE", "IMPORTANT"},
 	classIconAuras = GetDefaultAuraList(),
 })
 
@@ -1279,6 +1280,831 @@ function ClassIcon:SetupAura(aura, priority, name)
 					return not Gladius.dbi.profile.modules[self.name] or not Gladius.db.classIconImportantAuras
 				end,
 				order = 4,
+			},
+		},
+	}
+end
+
+local CLASS_ICON_DEFAULT_AURA_PRIORITY_ORDER = {
+	"CROWD_CONTROL",
+	"BIG_DEFENSIVE",
+	"EXTERNAL_DEFENSIVE",
+	"IMPORTANT",
+}
+
+local CLASS_ICON_AURA_PRIORITY_FILTERS = {
+	CROWD_CONTROL = {filter = "HARMFUL|CROWD_CONTROL"},
+	BIG_DEFENSIVE = {filter = "HELPFUL|BIG_DEFENSIVE", validateDefensive = true},
+	EXTERNAL_DEFENSIVE = {filter = "HELPFUL|EXTERNAL_DEFENSIVE"},
+	IMPORTANT = {filter = "HELPFUL|IMPORTANT"},
+}
+
+local function ClearClassIconCooldown(cooldown)
+	if not cooldown then
+		return
+	end
+	if cooldown.Clear then
+		cooldown:Clear()
+	else
+		cooldown:SetCooldown(0, 0)
+	end
+end
+
+local function CopyClassIconAuraPriorityOrder(order)
+	local copy = {}
+	for i = 1, #order do
+		copy[i] = order[i]
+	end
+	return copy
+end
+
+local function ClassIconAurasChanged(updateInfo)
+	if not updateInfo then
+		return true
+	end
+	if updateInfo.isFullUpdate then
+		return true
+	end
+	return (updateInfo.addedAuras and #updateInfo.addedAuras > 0)
+		or (updateInfo.updatedAuras and #updateInfo.updatedAuras > 0)
+		or (updateInfo.removedAuraInstanceIDs and #updateInfo.removedAuraInstanceIDs > 0)
+end
+
+local function GetClassIconAuraPriorityLabels()
+	return {
+		CROWD_CONTROL = L["CROWD_CONTROL"],
+		BIG_DEFENSIVE = L["BIG_DEFENSIVE"],
+		EXTERNAL_DEFENSIVE = L["EXTERNAL_DEFENSIVE"],
+		IMPORTANT = L["IMPORTANT"],
+	}
+end
+
+function ClassIcon:NormalizeAuraPriorityOrder(profile)
+	profile = profile or Gladius.db
+	if not profile then
+		return CopyClassIconAuraPriorityOrder(CLASS_ICON_DEFAULT_AURA_PRIORITY_ORDER)
+	end
+
+	local order = {}
+	local seen = {}
+	local source = profile.classIconAuraPriorityOrder
+
+	if type(source) == "table" then
+		for i = 1, #CLASS_ICON_DEFAULT_AURA_PRIORITY_ORDER do
+			local auraType = source[i]
+			if CLASS_ICON_AURA_PRIORITY_FILTERS[auraType] and not seen[auraType] then
+				order[#order + 1] = auraType
+				seen[auraType] = true
+			end
+		end
+	end
+
+	for i = 1, #CLASS_ICON_DEFAULT_AURA_PRIORITY_ORDER do
+		local auraType = CLASS_ICON_DEFAULT_AURA_PRIORITY_ORDER[i]
+		if not seen[auraType] then
+			order[#order + 1] = auraType
+			seen[auraType] = true
+		end
+	end
+
+	profile.classIconAuraPriorityOrder = order
+	return order
+end
+
+function ClassIcon:GetAuraPriorityOrder()
+	return self:NormalizeAuraPriorityOrder(Gladius.db)
+end
+
+function ClassIcon:RefreshShownUnits()
+	if not self.frame then
+		return
+	end
+	for unit in pairs(self.frame) do
+		if self.frame[unit] and self.frame[unit]:GetAlpha() == 1 then
+			self:UpdateAura(unit)
+		end
+	end
+end
+
+function ClassIcon:SetAuraPrioritySlot(slot, auraType)
+	local order = self:GetAuraPriorityOrder()
+	if order[slot] == auraType then
+		return
+	end
+
+	local otherSlot
+	for i = 1, #order do
+		if order[i] == auraType then
+			otherSlot = i
+			break
+		end
+	end
+
+	if otherSlot then
+		order[slot], order[otherSlot] = order[otherSlot], order[slot]
+	else
+		order[slot] = auraType
+	end
+
+	Gladius.db.classIconAuraPriorityOrder = CopyClassIconAuraPriorityOrder(order)
+	self:RefreshShownUnits()
+end
+
+function ClassIcon:GetPriorityAura(unit)
+	local order = self:GetAuraPriorityOrder()
+
+	for i = 1, #order do
+		local filterInfo = CLASS_ICON_AURA_PRIORITY_FILTERS[order[i]]
+		if filterInfo then
+			local spellID, startTime, duration, icon, auraInstanceID
+			for auraIndex = 1, 40 do
+				local auraData = C_UnitAuras.GetAuraDataByIndex(unit, auraIndex, filterInfo.filter)
+				if not auraData then
+					break
+				end
+
+				local durationInfo = C_UnitAuras.GetAuraDuration(unit, auraData.auraInstanceID)
+				local auraStart = durationInfo and durationInfo:GetStartTime()
+				local auraDuration = durationInfo and durationInfo:GetTotalDuration()
+
+				if auraStart and auraDuration then
+					local validAura = true
+					if filterInfo.validateDefensive and C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
+						local isDefensive = C_UnitAuras.AuraIsBigDefensive(auraData.spellId)
+						if not (issecretvalue(isDefensive) or isDefensive) then
+							validAura = false
+						end
+					end
+
+					if validAura then
+						spellID = auraData.spellId
+						startTime = auraStart
+						duration = auraDuration
+						icon = auraData.icon
+						auraInstanceID = auraData.auraInstanceID
+					end
+				end
+			end
+
+			if spellID then
+				return {
+					auraType = order[i],
+					spellID = spellID,
+					icon = icon,
+					duration = duration,
+					startTime = startTime,
+					auraInstanceID = auraInstanceID,
+				}
+			end
+		end
+	end
+end
+
+function ClassIcon:OnEnable()
+	self.version = 2
+	LSM = Gladius.LSM
+	self.frame = self.frame or {}
+	self:RegisterEvent("UNIT_AURA")
+	self:NormalizeAuraPriorityOrder(Gladius.db)
+	Gladius.db.auraVersion = self.version
+end
+
+function ClassIcon:OnProfileChanged()
+	self:NormalizeAuraPriorityOrder(Gladius.db)
+	self:RefreshShownUnits()
+end
+
+function ClassIcon:UNIT_AURA(event, unit, updateInfo)
+	if not Gladius:IsValidUnit(unit) then
+		return
+	end
+	self:UpdateAura(unit, updateInfo)
+end
+
+function ClassIcon:UpdateAura(unit, updateInfo)
+	if not self.frame then
+		return
+	end
+
+	local unitFrame = self.frame[unit]
+	if not unitFrame then
+		return
+	end
+
+	if #canOverWrite > 0 then
+		for i = 1, #canOverWrite do
+			if canOverWrite[i].unit == unit then
+				return
+			end
+		end
+	end
+
+	if not Gladius.db.classIconImportantAuras then
+		if not unitFrame.aura or not unitFrame.aura.isOverride then
+			self:SetClassIcon(unit)
+		end
+		return
+	end
+
+	if updateInfo and not ClassIconAurasChanged(updateInfo) then
+		return
+	end
+
+	local aura = self:GetPriorityAura(unit)
+	if aura then
+		self:ShowAura(unit, aura)
+	elseif not unitFrame.aura or not unitFrame.aura.isOverride then
+		self:SetClassIcon(unit)
+	end
+end
+
+function ClassIcon:ShowAura(unit, aura)
+	if not self.frame then
+		return
+	end
+
+	local unitFrame = self.frame[unit]
+	if not unitFrame then
+		return
+	end
+
+	unitFrame.aura = aura
+	unitFrame.texture:SetTexture(aura.icon)
+	if Gladius.db.classIconCrop then
+		unitFrame.texture:SetTexCoord(0.075, 0.925, 0.075, 0.925)
+	else
+		unitFrame.texture:SetTexCoord(0, 1, 0, 1)
+	end
+
+	local startTime = aura.startTime
+	local hasSecretStartTime = issecretvalue(startTime)
+	local hasDuration = issecretvalue(aura.duration) or (aura.duration and aura.duration > 0)
+	local hasStartTime = hasSecretStartTime or startTime
+
+	if not hasStartTime and aura.expires and hasDuration and not issecretvalue(aura.duration) then
+		local timeLeft = aura.expires > 0 and aura.expires - GetTime() or 0
+		startTime = GetTime() - (aura.duration - timeLeft)
+		hasStartTime = startTime
+	end
+	if not hasStartTime and hasDuration and not issecretvalue(aura.duration) then
+		startTime = GetTime()
+		hasStartTime = startTime
+	end
+
+	ApplyCooldownTextStyle(unitFrame.cooldown, unitFrame:GetHeight(), unitFrame)
+	if hasDuration and hasStartTime then
+		unitFrame.cooldown:SetCooldown(startTime, aura.duration)
+	else
+		ClearClassIconCooldown(unitFrame.cooldown)
+	end
+end
+
+function ClassIcon:SetClassIcon(unit)
+	local unitFrame = self.frame[unit]
+	if not unitFrame then
+		return
+	end
+
+	unitFrame.aura = nil
+	ClearClassIconCooldown(unitFrame.cooldown)
+
+	local class
+	local specIcon
+	if not Gladius.test then
+		local frame = Gladius:GetUnitFrame(unit)
+		class = frame.class
+		specIcon = frame.specIcon
+		if not class then
+			local id = tonumber(unit:match("arena(%d)"))
+			if id then
+				local specID = GetArenaOpponentSpec(id)
+				if specID and specID > 0 then
+					local _, _, _, icon, _, cls = GetSpecializationInfoByID(specID)
+					class = cls
+					specIcon = icon
+					frame.class = class
+					frame.specIcon = specIcon
+				end
+			end
+		end
+		if not class then
+			local _, fallbackClass = UnitClass(unit)
+			if fallbackClass then
+				class = fallbackClass
+				frame.class = fallbackClass
+			end
+		end
+	else
+		class = Gladius.testing[unit].unitClass
+		local _, _, _, icon = GetSpecializationInfoByID(Gladius.testing[unit].unitSpecId)
+		specIcon = icon
+	end
+
+	if Gladius.db.classIconShowSpec then
+		if specIcon then
+			unitFrame.texture:SetTexture(specIcon)
+			local left, right, top, bottom = 0, 1, 0, 1
+			if Gladius.db.classIconCrop then
+				left = left + (right - left) * 0.075
+				right = right - (right - left) * 0.075
+				top = top + (bottom - top) * 0.075
+				bottom = bottom - (bottom - top) * 0.075
+			end
+			unitFrame.texture:SetTexCoord(left, right, top, bottom)
+		end
+	else
+		if class then
+			unitFrame.texture:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes")
+			local left, right, top, bottom = unpack(CLASS_BUTTONS[class])
+			if Gladius.db.classIconCrop then
+				left = left + (right - left) * 0.075
+				right = right - (right - left) * 0.075
+				top = top + (bottom - top) * 0.075
+				bottom = bottom - (bottom - top) * 0.075
+			end
+			unitFrame.texture:SetTexCoord(left, right, top, bottom)
+		end
+	end
+end
+
+function ClassIcon:Update(unit)
+	self.frame = self.frame or {}
+	if not self.frame[unit] then
+		self:CreateFrame(unit)
+	end
+
+	local unitFrame = self.frame[unit]
+	local wasActiveAura = unitFrame.aura
+
+	unitFrame:ClearAllPoints()
+	local parent = Gladius:GetParent(unit, Gladius.db.classIconAttachTo)
+	unitFrame:SetPoint(Gladius.db.classIconAnchor, parent, Gladius.db.classIconRelativePoint, Gladius.db.classIconOffsetX, Gladius.db.classIconOffsetY)
+	unitFrame:SetFrameLevel(Gladius.db.classIconFrameLevel)
+	if Gladius.db.classIconAdjustSize then
+		unitFrame:SetWidth(Gladius.buttons[unit].frameHeight)
+		unitFrame:SetHeight(Gladius.buttons[unit].frameHeight)
+	else
+		unitFrame:SetWidth(Gladius.db.classIconSize)
+		unitFrame:SetHeight(Gladius.db.classIconSize)
+	end
+
+	if self:IsDetached() then
+		unitFrame.secure:SetAllPoints(unitFrame)
+		unitFrame.secure:SetHeight(unitFrame:GetHeight())
+		unitFrame.secure:SetWidth(unitFrame:GetWidth())
+		unitFrame.secure:Show()
+	else
+		unitFrame.secure:Hide()
+	end
+
+	unitFrame.texture:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes")
+	local hitLeft, hitRight, _, hitBottom = Gladius.buttons[unit]:GetHitRectInsets()
+	if self:GetAttachTo() == "Frame" and not self:IsDetached() then
+		if strfind(Gladius.db.classIconRelativePoint, "LEFT") then
+			hitLeft = -unitFrame:GetWidth() + Gladius.db.classIconOffsetX
+		else
+			hitRight = -unitFrame:GetWidth() + -Gladius.db.classIconOffsetX
+		end
+		if unitFrame:GetHeight() > Gladius.buttons[unit]:GetHeight() then
+			hitBottom = -(unitFrame:GetHeight() - Gladius.buttons[unit]:GetHeight()) + Gladius.db.classIconOffsetY
+		else
+			hitBottom = 0
+		end
+		Gladius.buttons[unit]:SetHitRectInsets(hitLeft, hitRight, 0, hitBottom)
+		Gladius.buttons[unit].secure:SetHitRectInsets(hitLeft, hitRight, 0, hitBottom)
+	end
+
+	unitFrame.normalTexture:SetHeight(unitFrame:GetHeight() + unitFrame:GetHeight() * 0.4)
+	unitFrame.normalTexture:SetWidth(unitFrame:GetWidth() + unitFrame:GetWidth() * 0.4)
+	unitFrame.normalTexture:ClearAllPoints()
+	unitFrame.normalTexture:SetPoint("CENTER", 0, 0)
+	unitFrame:SetNormalTexture("Interface\\AddOns\\Gladius_Updated_by_sammers\\Images\\Gloss")
+	unitFrame.texture:ClearAllPoints()
+	unitFrame.texture:SetPoint("TOPLEFT", unitFrame, "TOPLEFT")
+	unitFrame.texture:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT")
+	unitFrame.normalTexture:SetVertexColor(Gladius.db.classIconGlossColor.r, Gladius.db.classIconGlossColor.g, Gladius.db.classIconGlossColor.b, Gladius.db.classIconGloss and Gladius.db.classIconGlossColor.a or 0)
+	unitFrame.texture:SetTexCoord(0, 1, 0, 1)
+
+	unitFrame.cooldown.isDisabled = not Gladius.db.classIconCooldown
+	unitFrame.cooldown:SetReverse(Gladius.db.classIconCooldownReverse)
+	ApplyCooldownTextStyle(unitFrame.cooldown, unitFrame:GetHeight(), unitFrame)
+
+	if wasActiveAura and (Gladius.db.classIconImportantAuras or wasActiveAura.isOverride) then
+		self:ShowAura(unit, wasActiveAura)
+	else
+		self:SetClassIcon(unit)
+	end
+
+	unitFrame:SetAlpha(0)
+	self.frame[unit] = unitFrame
+end
+
+function ClassIcon:Show(unit)
+	self.frame[unit]:SetAlpha(1)
+	self:SetClassIcon(unit)
+	self:UpdateAura(unit)
+end
+
+function ClassIcon:Reset(unit)
+	self.frame[unit].aura = nil
+	self.frame[unit]:SetScript("OnUpdate", nil)
+	ClearClassIconCooldown(self.frame[unit].cooldown)
+	self.frame[unit].texture:SetTexture("")
+	self.frame[unit]:SetAlpha(0)
+end
+
+function ClassIcon:ResetModule()
+	Gladius.db.classIconAuraPriorityOrder = CopyClassIconAuraPriorityOrder(CLASS_ICON_DEFAULT_AURA_PRIORITY_ORDER)
+	self:RefreshShownUnits()
+end
+
+function ClassIcon:Test(unit)
+	if not Gladius.db.classIconImportantAuras then
+		return
+	end
+	if unit == "arena1" then
+		self:ShowAura(unit, {
+			icon = select(3, GetSpellInfo(45438)),
+			duration = 10,
+			startTime = GetTime(),
+			isOverride = true,
+		})
+	elseif unit == "arena2" then
+		self:ShowAura(unit, {
+			icon = select(3, GetSpellInfo(19263)),
+			duration = 5,
+			startTime = GetTime(),
+			isOverride = true,
+		})
+	end
+end
+
+function ClassIcon:GetOptions()
+	return {
+		general = {
+			type = "group",
+			name = L["General"],
+			order = 1,
+			args = {
+				widget = {
+					type = "group",
+					name = L["Widget"],
+					desc = L["Widget settings"],
+					inline = true,
+					order = 1,
+					args = {
+						classIconImportantAuras = {
+							type = "toggle",
+							name = L["Class Icon Important Auras"],
+							desc = L["Show important auras instead of the class icon"],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							order = 5,
+						},
+						classIconAuraPriority = {
+							type = "group",
+							name = L["Class Icon Aura Priority"],
+							desc = L["Choose the order used when checking which aura category should replace the class icon."],
+							inline = true,
+							order = 6,
+							args = {
+								slot1 = {
+									type = "select",
+									name = L["Priority 1"],
+									values = GetClassIconAuraPriorityLabels,
+									get = function()
+										return self:GetAuraPriorityOrder()[1]
+									end,
+									set = function(info, value)
+										self:SetAuraPrioritySlot(1, value)
+									end,
+									disabled = function()
+										return not Gladius.dbi.profile.modules[self.name] or not Gladius.db.classIconImportantAuras
+									end,
+									order = 1,
+									width = "double",
+								},
+								slot2 = {
+									type = "select",
+									name = L["Priority 2"],
+									values = GetClassIconAuraPriorityLabels,
+									get = function()
+										return self:GetAuraPriorityOrder()[2]
+									end,
+									set = function(info, value)
+										self:SetAuraPrioritySlot(2, value)
+									end,
+									disabled = function()
+										return not Gladius.dbi.profile.modules[self.name] or not Gladius.db.classIconImportantAuras
+									end,
+									order = 2,
+									width = "double",
+								},
+								slot3 = {
+									type = "select",
+									name = L["Priority 3"],
+									values = GetClassIconAuraPriorityLabels,
+									get = function()
+										return self:GetAuraPriorityOrder()[3]
+									end,
+									set = function(info, value)
+										self:SetAuraPrioritySlot(3, value)
+									end,
+									disabled = function()
+										return not Gladius.dbi.profile.modules[self.name] or not Gladius.db.classIconImportantAuras
+									end,
+									order = 3,
+									width = "double",
+								},
+								slot4 = {
+									type = "select",
+									name = L["Priority 4"],
+									values = GetClassIconAuraPriorityLabels,
+									get = function()
+										return self:GetAuraPriorityOrder()[4]
+									end,
+									set = function(info, value)
+										self:SetAuraPrioritySlot(4, value)
+									end,
+									disabled = function()
+										return not Gladius.dbi.profile.modules[self.name] or not Gladius.db.classIconImportantAuras
+									end,
+									order = 4,
+									width = "double",
+								},
+							},
+						},
+						classIconCrop = {
+							type = "toggle",
+							name = L["Class Icon Crop Borders"],
+							desc = L["Toggle if the class icon borders should be cropped or not."],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							order = 7,
+						},
+						sep = {
+							type = "description",
+							name = "",
+							width = "full",
+							order = 8,
+						},
+						classIconCooldown = {
+							type = "toggle",
+							name = L["Class Icon Cooldown Spiral"],
+							desc = L["Display the cooldown spiral for important auras"],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							order = 10,
+						},
+						classIconCooldownReverse = {
+							type = "toggle",
+							name = L["Class Icon Cooldown Reverse"],
+							desc = L["Invert the dark/bright part of the cooldown spiral"],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							order = 15,
+						},
+						classIconShowSpec = {
+							type = "toggle",
+							name = L["Class Icon Spec Icon"],
+							desc = L["Shows the specialization icon instead of the class icon"],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							order = 16,
+						},
+						sep2 = {
+							type = "description",
+							name = "",
+							width = "full",
+							order = 17,
+						},
+						classIconGloss = {
+							type = "toggle",
+							name = L["Class Icon Gloss"],
+							desc = L["Toggle gloss on the class icon"],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							order = 20,
+						},
+						classIconGlossColor = {
+							type = "color",
+							name = L["Class Icon Gloss Color"],
+							desc = L["Color of the class icon gloss"],
+							get = function(info)
+								return Gladius:GetColorOption(info)
+							end,
+							set = function(info, r, g, b, a)
+								return Gladius:SetColorOption(info, r, g, b, a)
+							end,
+							hasAlpha = true,
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							order = 25,
+						},
+						sep3 = {
+							type = "description",
+							name = "",
+							width = "full",
+							order = 27,
+						},
+						classIconFrameLevel = {
+							type = "range",
+							name = L["Class Icon Frame Level"],
+							desc = L["Frame level of the class icon"],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							min = 1,
+							max = 5,
+							step = 1,
+							width = "double",
+							order = 30,
+						},
+					},
+				},
+				size = {
+					type = "group",
+					name = L["Size"],
+					desc = L["Size settings"],
+					inline = true,
+					order = 2,
+					args = {
+						classIconAdjustSize = {
+							type = "toggle",
+							name = L["Class Icon Adjust Size"],
+							desc = L["Adjust class icon size to the frame size"],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							order = 5,
+						},
+						classIconSize = {
+							type = "range",
+							name = L["Class Icon Size"],
+							desc = L["Size of the class icon"],
+							min = 10,
+							max = 100,
+							step = 1,
+							disabled = function()
+								return Gladius.dbi.profile.classIconAdjustSize or not Gladius.dbi.profile.modules[self.name]
+							end,
+							order = 10,
+						},
+					},
+				},
+				position = {
+					type = "group",
+					name = L["Position"],
+					desc = L["Position settings"],
+					inline = true,
+					order = 3,
+					args = {
+						classIconAttachTo = {
+							type = "select",
+							name = L["Class Icon Attach To"],
+							desc = L["Attach class icon to given frame"],
+							values = function()
+								return Gladius:GetModules(self.name)
+							end,
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							order = 5,
+						},
+						classIconDetached = {
+							type = "toggle",
+							name = L["Detached from frame"],
+							desc = L["Detach the cast bar from the frame itself"],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							order = 6,
+						},
+						classIconPosition = {
+							type = "select",
+							name = L["Class Icon Position"],
+							desc = L["Position of the class icon"],
+							values = {["LEFT"] = L["Left"], ["RIGHT"] = L["Right"]},
+							get = function()
+								return strfind(Gladius.db.classIconAnchor, "RIGHT") and "LEFT" or "RIGHT"
+							end,
+							set = function(info, value)
+								if value == "LEFT" then
+									Gladius.db.classIconAnchor = "TOPRIGHT"
+									Gladius.db.classIconRelativePoint = "TOPLEFT"
+								else
+									Gladius.db.classIconAnchor = "TOPLEFT"
+									Gladius.db.classIconRelativePoint = "TOPRIGHT"
+								end
+								Gladius:UpdateFrame(info[1])
+							end,
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return Gladius.db.advancedOptions
+							end,
+							order = 7,
+						},
+						sep = {
+							type = "description",
+							name = "",
+							width = "full",
+							order = 8,
+						},
+						classIconAnchor = {
+							type = "select",
+							name = L["Class Icon Anchor"],
+							desc = L["Anchor of the class icon"],
+							values = function()
+								return Gladius:GetPositions()
+							end,
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							order = 10,
+						},
+						classIconRelativePoint = {
+							type = "select",
+							name = L["Class Icon Relative Point"],
+							desc = L["Relative point of the class icon"],
+							values = function()
+								return Gladius:GetPositions()
+							end,
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							hidden = function()
+								return not Gladius.db.advancedOptions
+							end,
+							order = 15,
+						},
+						sep2 = {
+							type = "description",
+							name = "",
+							width = "full",
+							order = 17,
+						},
+						classIconOffsetX = {
+							type = "range",
+							name = L["Class Icon Offset X"],
+							desc = L["X offset of the class icon"],
+							min = -100,
+							max = 100,
+							step = 1,
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							order = 20,
+						},
+						classIconOffsetY = {
+							type = "range",
+							name = L["Class Icon Offset Y"],
+							desc = L["Y offset of the class icon"],
+							disabled = function()
+								return not Gladius.dbi.profile.modules[self.name]
+							end,
+							min = -50,
+							max = 50,
+							step = 1,
+							order = 25,
+						},
+					},
+				},
 			},
 		},
 	}

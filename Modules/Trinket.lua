@@ -1,4 +1,4 @@
-﻿local Gladius = _G.Gladius
+local Gladius = _G.Gladius
 if not Gladius then
 	DEFAULT_CHAT_FRAME:AddMessage(format("Module %s requires Gladius", "Trinket"))
 end
@@ -889,6 +889,8 @@ function Trinket:ResetTrinketShuffle()
         local frame = self.frame[unit]
         if frame then
             frame.timeleft = nil
+            frame._blizzCooldownStart = nil
+            frame._blizzCooldownDuration = nil
             frame:SetScript("OnUpdate", nil)
             Gladius:Call(Gladius.modules.Timer, "SetTimer", frame, 0)
             frame.cooldown:Clear()
@@ -898,4 +900,264 @@ end
 
 function Trinket:GROUP_ROSTER_UPDATE()
     Trinket:ResetTrinketShuffle()
+end
+
+local function GetDefaultTrinketIcon(unit, testing)
+	if Gladius.db.trinketFaction then
+		local factionUnit = testing and "player" or unit
+		if UnitFactionGroup(factionUnit) == "Horde" then
+			return "Interface\\Icons\\INV_Jewelry_Necklace_38"
+		end
+		return "Interface\\Icons\\INV_Jewelry_Necklace_37"
+	end
+	return 1322720
+end
+
+function Trinket:ApplyIdleTrinketState(unit, testing)
+	local unitFrame = self.frame and self.frame[unit]
+	if not unitFrame then
+		return
+	end
+
+	if Gladius.db.trinketGridStyleIcon then
+		unitFrame.texture:SetTexture(LSM:Fetch(LSM.MediaType.STATUSBAR, "Minimalist"))
+		if unitFrame.timeleft and unitFrame.timeleft > 0 then
+			unitFrame.texture:SetVertexColor(Gladius.db.trinketGridStyleIconUsedColor.r, Gladius.db.trinketGridStyleIconUsedColor.g, Gladius.db.trinketGridStyleIconUsedColor.b, Gladius.db.trinketGridStyleIconUsedColor.a)
+		else
+			unitFrame.texture:SetVertexColor(Gladius.db.trinketGridStyleIconColor.r, Gladius.db.trinketGridStyleIconColor.g, Gladius.db.trinketGridStyleIconColor.b, Gladius.db.trinketGridStyleIconColor.a)
+		end
+	else
+		unitFrame.texture:SetTexture(GetDefaultTrinketIcon(unit, testing))
+		unitFrame.texture:SetVertexColor(1, 1, 1, 1)
+	end
+
+	if Gladius.db.trinketIconCrop or Gladius.db.trinketGridStyleIcon then
+		unitFrame.texture:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	else
+		unitFrame.texture:SetTexCoord(0, 1, 0, 1)
+	end
+end
+
+local function GetCooldownRemainingSeconds(cooldown)
+	if not cooldown or not cooldown.GetCooldownTimes then
+		return nil
+	end
+
+	local ok, remaining = pcall(function()
+		local startMS, durationMS = cooldown:GetCooldownTimes()
+		if not startMS or not durationMS or issecretvalue(startMS) or issecretvalue(durationMS) then
+			return nil
+		end
+		return ((startMS + durationMS) / 1000) - GetTime()
+	end)
+
+	if not ok or not remaining or remaining <= 0 then
+		return nil
+	end
+
+	return remaining
+end
+
+function Trinket:ApplyBlizzTrinketCooldown(unit, start, duration)
+	local unitFrame = self.frame and self.frame[unit]
+	if not unitFrame then
+		return
+	end
+
+	unitFrame.cooldown:SetCooldown(start, duration)
+
+	local remaining = GetCooldownRemainingSeconds(unitFrame.cooldown)
+	if remaining and (not unitFrame.timeleft or math.abs(unitFrame.timeleft - remaining) > 0.5) then
+		self:UpdateTrinket(unit, remaining)
+	end
+end
+
+function Trinket:SyncBlizzTrinketState(unit, ccRemover)
+	local unitFrame = self.frame and self.frame[unit]
+	if not unitFrame or not ccRemover then
+		return
+	end
+
+	if ccRemover.Icon and ccRemover.Icon.GetTexture then
+		local ok, texture = pcall(ccRemover.Icon.GetTexture, ccRemover.Icon)
+		if ok and texture then
+			unitFrame.texture:SetTexture(texture)
+			unitFrame.texture:SetVertexColor(1, 1, 1, 1)
+		end
+	end
+
+	if ccRemover.Cooldown and ccRemover.Cooldown.GetCooldownTimes then
+		local ok, startSeconds, durationSeconds = pcall(function()
+			local startMS, durationMS = ccRemover.Cooldown:GetCooldownTimes()
+			if not startMS or not durationMS or issecretvalue(startMS) or issecretvalue(durationMS) then
+				return nil
+			end
+			return startMS / 1000, durationMS / 1000
+		end)
+		if ok and startSeconds and durationSeconds then
+			self:ApplyBlizzTrinketCooldown(unit, startSeconds, durationSeconds)
+		end
+	end
+end
+
+function Trinket:OnEnable()
+	self:RegisterEvent("GROUP_ROSTER_UPDATE")
+	LSM = Gladius.LSM
+	if not self.frame then
+		self.frame = {}
+	end
+	if not self.hookedBlizzTrinkets then
+		self.hookedBlizzTrinkets = {}
+	end
+end
+
+function Trinket:ARENA_COOLDOWNS_UPDATE(event, unit)
+	-- Relayed from Blizzard's hidden CcRemoverFrame instead.
+end
+
+function Trinket:ARENA_CROWD_CONTROL_SPELL_UPDATE(event, unit, spellID)
+	-- Relayed from Blizzard's hidden CcRemoverFrame instead.
+end
+
+function Trinket:COMBAT_LOG_EVENT_UNFILTERED(event)
+	-- Relayed from Blizzard's hidden CcRemoverFrame instead.
+end
+
+function Trinket:HookBlizzTrinket(unit)
+	local id = tonumber(unit:match("arena(%d)"))
+	if not id then
+		return false
+	end
+
+	local blizzFrame = _G["CompactArenaFrameMember" .. id]
+	if not blizzFrame or not blizzFrame.CcRemoverFrame then
+		return false
+	end
+
+	local button = Gladius.buttons[unit]
+	if not button then
+		return false
+	end
+
+	local ccRemover = blizzFrame.CcRemoverFrame
+	ccRemover:SetParent(button)
+	ccRemover:SetAlpha(0)
+
+	if self.hookedBlizzTrinkets[id] ~= ccRemover then
+		self.hookedBlizzTrinkets[id] = ccRemover
+		local trinket = self
+
+		hooksecurefunc(ccRemover.Cooldown, "SetCooldown", function(_, start, duration)
+			trinket:ApplyBlizzTrinketCooldown(unit, start, duration)
+		end)
+
+		hooksecurefunc(ccRemover.Icon, "SetTexture", function(_, texture)
+			if not trinket.frame or not trinket.frame[unit] then
+				return
+			end
+			if texture then
+				trinket.frame[unit].texture:SetTexture(texture)
+				trinket.frame[unit].texture:SetVertexColor(1, 1, 1, 1)
+			else
+				trinket:ApplyIdleTrinketState(unit, Gladius.test)
+			end
+		end)
+
+		hooksecurefunc(ccRemover.Cooldown, "Clear", function()
+			local unitFrame = trinket.frame and trinket.frame[unit]
+			if not unitFrame then
+				return
+			end
+			unitFrame.timeleft = nil
+			unitFrame._blizzCooldownStart = nil
+			unitFrame._blizzCooldownDuration = nil
+			unitFrame:SetScript("OnUpdate", nil)
+			if unitFrame.cooldown.Clear then
+				unitFrame.cooldown:Clear()
+			else
+				unitFrame.cooldown:SetCooldown(0, 0)
+			end
+			trinket:ApplyIdleTrinketState(unit, Gladius.test)
+		end)
+	end
+
+	self:SyncBlizzTrinketState(unit, ccRemover)
+	return true
+end
+
+function Trinket:UpdateTrinket(unit, duration, startTime)
+	local unitFrame = self.frame and self.frame[unit]
+	if not unitFrame then
+		return
+	end
+
+	local remaining = duration
+	if startTime and duration then
+		remaining = math.max(0, (startTime + duration) - GetTime())
+	end
+	if remaining <= 0 then
+		return
+	end
+
+	local announcements = Gladius.db.announcements
+	if Gladius.db.trinketGridStyleIcon then
+		unitFrame.texture:SetVertexColor(Gladius.db.trinketGridStyleIconUsedColor.r, Gladius.db.trinketGridStyleIconUsedColor.g, Gladius.db.trinketGridStyleIconUsedColor.b, Gladius.db.trinketGridStyleIconUsedColor.a)
+	end
+	if announcements and announcements.trinket then
+		local nameOk, unitName = pcall(UnitName, unit)
+		local classOk, unitClass = pcall(UnitClass, unit)
+		Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["TRINKET USED: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
+	end
+	if (announcements and announcements.trinket) or Gladius.db.trinketGridStyleIcon then
+		unitFrame.timeleft = remaining
+		unitFrame:SetScript("OnUpdate", function(_, elapsed)
+			unitFrame.timeleft = unitFrame.timeleft - elapsed
+			if unitFrame.timeleft <= 0 then
+				unitFrame.timeleft = nil
+				if Gladius.db.trinketGridStyleIcon then
+					unitFrame.texture:SetVertexColor(Gladius.db.trinketGridStyleIconColor.r, Gladius.db.trinketGridStyleIconColor.g, Gladius.db.trinketGridStyleIconColor.b, Gladius.db.trinketGridStyleIconColor.a)
+				end
+				if announcements and announcements.trinket then
+					local nameOk, unitName = pcall(UnitName, unit)
+					local classOk, unitClass = pcall(UnitClass, unit)
+					Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["TRINKET READY: %s (%s)"], (nameOk and unitName) or UNKNOWN, (classOk and unitClass) or UNKNOWN), 2, unit)
+				end
+				unitFrame:SetScript("OnUpdate", nil)
+			end
+		end)
+	end
+end
+
+function Trinket:Show(unit)
+	local testing = Gladius.test
+	self.frame[unit]:SetAlpha(1)
+	self:ApplyIdleTrinketState(unit, testing)
+	if not testing then
+		if not self:HookBlizzTrinket(unit) then
+			C_Timer.After(0.5, function()
+				if not self:HookBlizzTrinket(unit) then
+					C_Timer.After(1.5, function()
+						self:HookBlizzTrinket(unit)
+					end)
+				end
+			end)
+		end
+	end
+end
+
+function Trinket:Reset(unit)
+	if not self.frame[unit] then
+		return
+	end
+	self.frame[unit]:SetScript("OnUpdate", nil)
+	self.frame[unit].timeleft = nil
+	self.frame[unit]._blizzCooldownStart = nil
+	self.frame[unit]._blizzCooldownDuration = nil
+	if self.frame[unit].cooldown.Clear then
+		self.frame[unit].cooldown:Clear()
+	else
+		self.frame[unit].cooldown:SetCooldown(0, 0)
+	end
+	self:ApplyIdleTrinketState(unit, Gladius.test)
+	self.frame[unit]:SetAlpha(0)
 end

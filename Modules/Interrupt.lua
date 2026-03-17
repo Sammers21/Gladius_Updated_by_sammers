@@ -136,7 +136,7 @@ function Interrupt:UpdateInterrupt(unitt, sp, d)
     else
         icon = 135856
     end
-    ClassIcon:ShowAura(unitt, {icon = icon, duration=d});
+    ClassIcon:ShowAura(unitt, {icon = icon, duration = d, isOverride = true});
     table.insert(canOverWrite, {unit=unitt, time=GetTime()+d});
 end
 

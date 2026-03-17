@@ -431,6 +431,14 @@ end
 function Gladius:ZONE_CHANGED_NEW_AREA()
 	local _, instanceType = IsInInstance()
 	-- check if we are entering or leaving an arena
+	-- Combat logging for arenas and battlegrounds
+	if self.db and self.db.enableCombatLogging then
+		if instanceType == "arena" or instanceType == "pvp" then
+			LoggingCombat(true)
+			self:Print("Combat logging enabled. Good luck!")
+		end
+	end
+
 	if instanceType == "arena" then
 		self:JoinedArena()
 	elseif instanceType ~= "arena" and self.instanceType == "arena" then
@@ -473,15 +481,7 @@ function Gladius:JoinedArena()
 	-- hide buttons
 	self:HideFrame()
 
-	-- Reset and re-hook Blizzard's DebuffFrame for CC display BEFORE hiding the frame
-	-- On /reload, Blizzard frames are recreated so old hooks are lost
-	local classIconModule = self.modules["ClassIcon"]
-	if classIconModule and classIconModule:IsEnabled() then
-		classIconModule.hookedBlizzDebuffs = {}
-		for i = 1, 5 do
-			classIconModule:HookBlizzDebuffs("arena" .. i)
-		end
-	end
+	-- Midnight class-icon aura handling is driven by UNIT_AURA directly.
 	-- Trinket hooking is handled by Trinket:Show() with retry logic.
 	-- Do NOT reset hookedBlizzTrinkets here — hooksecurefunc stacks
 	-- and cannot be removed, so re-hooking causes duplicate calls.

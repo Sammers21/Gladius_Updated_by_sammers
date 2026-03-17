@@ -154,11 +154,9 @@ function DRTracker:UpdateColors(unit)
 end
 
 -- NOTE: Do NOT replace AnchorFirstTrayItem/AnchorNextTrayItem on the tray.
--- Replacing methods taints the tray object, causing Blizzard's
--- UpdateTrayItemAnchoring to fail when accessing activeItemForCategory
--- (forbidden table). Instead, the tray's SetPoint anchor controls visual
--- growth direction via ResizeLayoutFrame — same approach as sArena_Updated2
--- and sArena_Reloaded.
+-- Replacing methods taints the tray object and makes Blizzard's protected
+-- anchoring path hand us secret trayItem arguments. Re-anchor only the safe
+-- child refs returned by GetChildren() after Blizzard finishes its own layout.
 
 function DRTracker:StyleBlizzDRItem(drFrame, iconSize)
 	if not drFrame then
@@ -260,6 +258,34 @@ function DRTracker:StyleBlizzDRItem(drFrame, iconSize)
 	ApplyCooldownTextStyle(drFrame.Cooldown, iconSize, Gladius.db.drFontSize or 12)
 end
 
+local function PositionVisibleBlizzDRItems(drTray)
+	local gap = Gladius.db.drTrackerMargin or 5
+	local firstPoint, nextPoint, relativePoint, offsetX, offsetY
+
+	if strfind(Gladius.db.drTrackerAnchor, "LEFT") then
+		firstPoint, nextPoint, relativePoint, offsetX, offsetY = "LEFT", "LEFT", "RIGHT", gap, 0
+	elseif strfind(Gladius.db.drTrackerAnchor, "RIGHT") then
+		firstPoint, nextPoint, relativePoint, offsetX, offsetY = "RIGHT", "RIGHT", "LEFT", -gap, 0
+	elseif strfind(Gladius.db.drTrackerAnchor, "BOTTOM") then
+		firstPoint, nextPoint, relativePoint, offsetX, offsetY = "BOTTOM", "BOTTOM", "TOP", 0, gap
+	else
+		firstPoint, nextPoint, relativePoint, offsetX, offsetY = "TOP", "TOP", "BOTTOM", 0, -gap
+	end
+
+	local previousFrame
+	for _, drFrame in ipairs({ drTray:GetChildren() }) do
+		if drFrame:IsShown() then
+			drFrame:ClearAllPoints()
+			if not previousFrame then
+				drFrame:SetPoint(firstPoint, drTray, firstPoint, 0, 0)
+			else
+				drFrame:SetPoint(nextPoint, previousFrame, relativePoint, offsetX, offsetY)
+			end
+			previousFrame = drFrame
+		end
+	end
+end
+
 function DRTracker:StyleBlizzDRTray(unit, id, drTray)
 	if not drTray or not unit then
 		return
@@ -273,9 +299,11 @@ function DRTracker:StyleBlizzDRTray(unit, id, drTray)
 	drTray:SetFrameStrata("HIGH")
 	drTray:SetFrameLevel(Gladius.db.drTrackerFrameLevel + 5)
 	drTray:SetScale(1)
+
 	for _, drFrame in ipairs({ drTray:GetChildren() }) do
 		self:StyleBlizzDRItem(drFrame, iconSize)
 	end
+	PositionVisibleBlizzDRItems(drTray)
 
 	if not drTray._gladiusOnEventHooked then
 		drTray._gladiusOnEventHooked = true
@@ -298,6 +326,7 @@ function DRTracker:StyleBlizzDRTray(unit, id, drTray)
 					tracker:StyleBlizzDRItem(child, sz)
 				end
 			end
+			PositionVisibleBlizzDRItems(trayRef)
 		end)
 	end
 end

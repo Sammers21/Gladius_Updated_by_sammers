@@ -1,4 +1,4 @@
-﻿local rawset = rawset
+local rawset = rawset
 local tostring = tostring
 
 local L = setmetatable({ }, {__index = function(t, k)
@@ -238,6 +238,16 @@ if locale == "enUS" or locale == "enGB" then
 	L["Y Offset of the cast time text"] = "Y Offset of the cast time text"
 	L["Class Icon Important Auras"] = "Class Icon Important Auras"
 	L["Show important auras instead of the class icon"] = "Show important auras instead of the class icon"
+	L["Class Icon Aura Priority"] = "Class Icon Aura Priority"
+	L["Choose the order used when checking which aura category should replace the class icon."] = "Choose the order used when checking which aura category should replace the class icon."
+	L["Priority 1"] = "Priority 1"
+	L["Priority 2"] = "Priority 2"
+	L["Priority 3"] = "Priority 3"
+	L["Priority 4"] = "Priority 4"
+	L["CROWD_CONTROL"] = "Crowd Control"
+	L["BIG_DEFENSIVE"] = "Big Defensive"
+	L["EXTERNAL_DEFENSIVE"] = "External Defensive"
+	L["IMPORTANT"] = "Important"
 	L["Class Icon Crop Borders"] = "Class Icon Crop Borders"
 	L["Toggle if the class icon borders should be cropped or not."] = "Toggle if the class icon borders should be cropped or not."
 	L["Class Icon Cooldown Spiral"] = "Class Icon Cooldown Spiral"
@@ -620,6 +630,10 @@ if locale == "enUS" or locale == "enGB" then
 	L["Paladin:short"] = "Pala"
 	L["Mage:short"] = "Mage"
 	L["Monk:short"] = "Monk"
+	L["Combat Logging"] = "Combat Logging"
+	L["Combat logging settings"] = "Combat logging settings"
+	L["Enable Combat Logging"] = "Enable Combat Logging"
+	L["Automatically enable combat logging when entering arenas or battlegrounds. Logs are saved to WoW's Logs folder for analysis on sites like WoWArenaLogs."] = "Automatically enable combat logging when entering arenas or battlegrounds. Logs are saved to WoW's Logs folder for analysis on sites like WoWArenaLogs."
 elseif locale == "deDE" then
 	L["Add"] = "Hinzufügen"
 	L["Add text"] = "Text hinzufügen"
