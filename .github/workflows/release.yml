@@ -53,12 +53,33 @@ jobs:
           asset_path: ./Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip
           asset_name: Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip
           asset_content_type: application/zip
-      - name: "Upload to CurseForge"
-        uses: itsmeow/curseforge-upload@v3
-        with:
-          file_path: "Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip"
-          game_endpoint: "wow"
-          changelog: "${{ github.event.head_commit.message }}"
-          game_versions: "12.0.1"
-          project_id: ${{ vars.CURSEFORGE_PROJECT_ID }}
-          token: "${{ secrets.CF_API_TOKEN }}"
+      # - name: "Upload to CurseForge"
+      #   uses: itsmeow/curseforge-upload@v3
+      #   with:
+      #     file_path: "Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip"
+      #     game_endpoint: "wow"
+      #     changelog: "${{ github.event.head_commit.message }}"
+      #     game_versions: "12.0.1"
+      #     project_id: ${{ vars.CURSEFORGE_PROJECT_ID }}
+      #     token: "${{ secrets.CF_API_TOKEN }}"
+      - name: "Upload to Wago.io"
+        if: ${{ vars.WAGO_PROJECT_ID != '' }}
+        env:
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          WAGO_PROJECT_ID: ${{ vars.WAGO_PROJECT_ID }}
+        run: |
+          METADATA=$(cat <<EOF
+          {
+            "label": "${{ steps.version.outputs.version }}",
+            "stability": "stable",
+            "changelog": "${{ github.event.head_commit.message }}",
+            "supported_retail_patch": "12.0.1"
+          }
+          EOF
+          )
+          curl -f -X POST \
+            -F "metadata=$METADATA" \
+            -F "file=@Gladius_Updated_by_sammers-${{ steps.version.outputs.version }}.zip" \
+            -H "Authorization: Bearer $WAGO_API_TOKEN" \
+            -H "Accept: application/json" \
+            "https://addons.wago.io/api/projects/$WAGO_PROJECT_ID/version"
